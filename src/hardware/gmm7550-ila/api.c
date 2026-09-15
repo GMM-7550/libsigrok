@@ -1,7 +1,7 @@
 /*
  * This file is part of the libsigrok project.
  *
- * Copyright (C) 2020 Anton Kuzmin <anton.kuzmin@cs.fau.de>
+ * Copyright (C) 2020, 2026 Anton Kuzmin <ak@gmm7550.dev>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -268,7 +268,7 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 
 static struct sr_dev_driver gmm7550_ila_driver_info = {
 	.name = "gmm7550-ila",
-	.longname = "GMM-7550 GateMate FPGA ILA Driver",
+	.longname = "GMM-7550 GateMate FPGA ILA",
 	.api_version = 1,
 	.init = std_init,
 	.cleanup = std_cleanup,

@@ -1,7 +1,7 @@
 /*
  * This file is part of the libsigrok project.
  *
- * Copyright (C) 2020 Anton Kuzmin <anton.kuzmin@cs.fau.de>
+ * Copyright (C) 2020, 2026 Anton Kuzmin <ak@gmm7550.dev>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
