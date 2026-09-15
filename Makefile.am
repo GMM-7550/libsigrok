@@ -753,6 +753,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/uni-t-ut32x/protocol.c \
 	src/hardware/uni-t-ut32x/api.c
 endif
+if HW_VJTAG_DEMO
+src_libdrivers_la_SOURCES += \
+	src/hardware/vjtag-demo/protocol.h \
+	src/hardware/vjtag-demo/protocol.c \
+	src/hardware/vjtag-demo/api.c
+endif
 if HW_YOKOGAWA_DLM
 src_libdrivers_la_SOURCES += \
 	src/hardware/yokogawa-dlm/protocol.h \
