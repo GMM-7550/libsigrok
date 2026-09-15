@@ -388,6 +388,12 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/gmc-mh-1x-2x/protocol.c \
 	src/hardware/gmc-mh-1x-2x/api.c
 endif
+if HW_GMM7550_ILA
+src_libdrivers_la_SOURCES += \
+	src/hardware/gmm7550-ila/protocol.h \
+	src/hardware/gmm7550-ila/protocol.c \
+	src/hardware/gmm7550-ila/api.c
+endif
 if HW_GREATFET
 src_libdrivers_la_SOURCES += \
 	src/hardware/greatfet/protocol.h \
@@ -752,12 +758,6 @@ src_libdrivers_la_SOURCES += \
 	src/hardware/uni-t-ut32x/protocol.h \
 	src/hardware/uni-t-ut32x/protocol.c \
 	src/hardware/uni-t-ut32x/api.c
-endif
-if HW_VJTAG_DEMO
-src_libdrivers_la_SOURCES += \
-	src/hardware/vjtag-demo/protocol.h \
-	src/hardware/vjtag-demo/protocol.c \
-	src/hardware/vjtag-demo/api.c
 endif
 if HW_YOKOGAWA_DLM
 src_libdrivers_la_SOURCES += \
@@ -1151,4 +1151,3 @@ dist-changelog:
 	else \
 		rm -f .ChangeLog.tmp; exit 1; \
 	fi
-

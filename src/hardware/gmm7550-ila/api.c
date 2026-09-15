@@ -49,7 +49,7 @@ static const uint64_t samplerates[] = {
 	SAMPLE_RATE,
 };
 
-static struct sr_dev_driver vjtag_demo_driver_info;
+static struct sr_dev_driver gmm7550_ila_driver_info;
 
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
@@ -76,7 +76,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	if (!conn)
 		return NULL;
 
-	struct vjtag_demo_tcp *tcp = vjtag_demo_tcp_new();
+	struct gmm7550_ila_tcp *tcp = gmm7550_ila_tcp_new();
 
 	char **strs = g_strsplit(conn, "/", 3);
 	tcp->address = g_strdup(strs[1]);
@@ -86,17 +86,17 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	if (!tcp->address)
 		return NULL;
 
-	if (vjtag_demo_tcp_open(tcp) != SR_OK)
+	if (gmm7550_ila_tcp_open(tcp) != SR_OK)
 		return NULL;
 
-	if (vjtag_demo_check_id(tcp) != SR_OK)
+	if (gmm7550_ila_check_id(tcp) != SR_OK)
 		return NULL;
 
 	struct sr_dev_inst *sdi = g_malloc0(sizeof(struct sr_dev_inst));
 
 	sdi->status = SR_ST_INACTIVE;
-	sdi->vendor = g_strdup("fosdem'20");
-	sdi->model = g_strdup("vjtag-la-mx10");
+	sdi->vendor = g_strdup("GMM-7550");
+	sdi->model = g_strdup("gmm7550-ila");
 	sdi->version = g_strdup("v0.1");
 	sdi->driver = di;
 
@@ -114,7 +114,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	sdi->inst_type = SR_INST_USER;
 	sdi->conn = tcp;
 
-	vjtag_demo_tcp_close(tcp);
+	gmm7550_ila_tcp_close(tcp);
 
 	devices = g_slist_append(devices, sdi);
 
@@ -130,10 +130,10 @@ static int dev_clear(const struct sr_dev_driver *di)
 	if (drvc) {
 		for (l = drvc->instances; l; l = l->next) {
 			sdi = l->data;
-			struct vjtag_demo_tcp *tcp = sdi->conn;
+			struct gmm7550_ila_tcp *tcp = sdi->conn;
 			if (tcp) {
-				vjtag_demo_tcp_close(tcp);
-				vjtag_demo_tcp_free(tcp);
+				gmm7550_ila_tcp_close(tcp);
+				gmm7550_ila_tcp_free(tcp);
 				g_free(tcp);
 			}
 			sdi->conn = NULL;
@@ -148,7 +148,7 @@ static int dev_open(struct sr_dev_inst *sdi)
 	if (!sdi || !sdi->conn)
 		return SR_ERR;
 
-	return vjtag_demo_tcp_open(sdi->conn);
+	return gmm7550_ila_tcp_open(sdi->conn);
 }
 
 static int dev_close(struct sr_dev_inst *sdi)
@@ -156,7 +156,7 @@ static int dev_close(struct sr_dev_inst *sdi)
 	if (!sdi || !sdi->conn)
 		return SR_ERR;
 
-	return vjtag_demo_tcp_close(sdi->conn);
+	return gmm7550_ila_tcp_close(sdi->conn);
 }
 
 static int config_get(uint32_t key, GVariant **data,
@@ -166,7 +166,7 @@ static int config_get(uint32_t key, GVariant **data,
 	(void)data;
 	(void)cg;
 	struct dev_context *devc;
-	struct vjtag_demo_tcp *tcp;
+	struct gmm7550_ila_tcp *tcp;
 
 	switch (key) {
 	case SR_CONF_CONN:
@@ -236,17 +236,17 @@ static int config_list(uint32_t key, GVariant **data,
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	struct vjtag_demo_tcp *tcp = sdi->conn;
+	struct gmm7550_ila_tcp *tcp = sdi->conn;
 	struct dev_context *devc = sdi->priv;
 
-	vjtag_demo_convert_trigger(sdi);
-	vjtag_demo_configure_trigger(tcp->socket, devc);
-	vjtag_demo_configure_pre_store(tcp->socket, devc);
+	gmm7550_ila_convert_trigger(sdi);
+	gmm7550_ila_configure_trigger(tcp->socket, devc);
+	gmm7550_ila_configure_pre_store(tcp->socket, devc);
 
 	sr_session_source_add(sdi->session, tcp->socket, G_IO_IN, 100,
-			      vjtag_demo_receive_data, (struct sr_dev_inst *)sdi);
+			      gmm7550_ila_receive_data, (struct sr_dev_inst *)sdi);
 
-	vjtag_demo_acquisition_start(tcp->socket);
+	gmm7550_ila_acquisition_start(tcp->socket);
 
 	std_session_send_df_header(sdi);
 
@@ -255,20 +255,20 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
-	struct vjtag_demo_tcp *tcp = sdi->conn;
+	struct gmm7550_ila_tcp *tcp = sdi->conn;
 	//struct dev_context *devc = sdi->priv;
 
 	std_session_send_df_end(sdi);
 	sr_session_source_remove(sdi->session, tcp->socket);
 
-	vjtag_demo_acquisition_stop(tcp->socket);
+	gmm7550_ila_acquisition_stop(tcp->socket);
 
 	return SR_OK;
 }
 
-static struct sr_dev_driver vjtag_demo_driver_info = {
-	.name = "vjtag-demo",
-	.longname = "VJTAG Logic Analyzer Demo Driver",
+static struct sr_dev_driver gmm7550_ila_driver_info = {
+	.name = "gmm7550-ila",
+	.longname = "GMM-7550 GateMate FPGA ILA Driver",
 	.api_version = 1,
 	.init = std_init,
 	.cleanup = std_cleanup,
@@ -284,4 +284,4 @@ static struct sr_dev_driver vjtag_demo_driver_info = {
 	.dev_acquisition_stop = dev_acquisition_stop,
 	.context = NULL,
 };
-SR_REGISTER_DEV_DRIVER(vjtag_demo_driver_info);
+SR_REGISTER_DEV_DRIVER(gmm7550_ila_driver_info);

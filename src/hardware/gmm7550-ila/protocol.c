@@ -38,11 +38,11 @@
 
 SR_PRIV char socket_buf[BUF_SIZE];
 
-SR_PRIV struct vjtag_demo_tcp *vjtag_demo_tcp_new(void)
+SR_PRIV struct gmm7550_ila_tcp *gmm7550_ila_tcp_new(void)
 {
-	struct vjtag_demo_tcp *tcp;
+	struct gmm7550_ila_tcp *tcp;
 
-	tcp = g_malloc0(sizeof(struct vjtag_demo_tcp));
+	tcp = g_malloc0(sizeof(struct gmm7550_ila_tcp));
 	tcp->address = NULL;
 	tcp->port = NULL;
 	tcp->socket = -1;
@@ -50,13 +50,13 @@ SR_PRIV struct vjtag_demo_tcp *vjtag_demo_tcp_new(void)
 	return tcp;
 }
 
-SR_PRIV void vjtag_demo_tcp_free(struct vjtag_demo_tcp *tcp)
+SR_PRIV void gmm7550_ila_tcp_free(struct gmm7550_ila_tcp *tcp)
 {
 	g_free(tcp->address);
 	g_free(tcp->port);
 }
 
-SR_PRIV int vjtag_demo_tcp_open(struct vjtag_demo_tcp *tcp)
+SR_PRIV int gmm7550_ila_tcp_open(struct gmm7550_ila_tcp *tcp)
 {
 	struct addrinfo hints;
 	struct addrinfo *results, *res;
@@ -98,13 +98,13 @@ SR_PRIV int vjtag_demo_tcp_open(struct vjtag_demo_tcp *tcp)
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_tcp_close(struct vjtag_demo_tcp *tcp)
+SR_PRIV int gmm7550_ila_tcp_close(struct gmm7550_ila_tcp *tcp)
 {
 	int socket = tcp->socket;
 	tcp->socket = -1;
 
 	if (socket > 0) {
-		(void)vjtag_demo_run_cmd(socket, "exit");
+		(void)gmm7550_ila_run_cmd(socket, "exit");
 		if (close(socket) < 0) {
 			sr_err("Close failed: %s", g_strerror(errno));
 			return SR_ERR;
@@ -113,7 +113,7 @@ SR_PRIV int vjtag_demo_tcp_close(struct vjtag_demo_tcp *tcp)
 	return SR_OK;
 }
 
-SR_PRIV char *vjtag_demo_recv(int fd)
+SR_PRIV char *gmm7550_ila_recv(int fd)
 {
 	char *b = socket_buf;
 	int r;
@@ -136,7 +136,7 @@ SR_PRIV char *vjtag_demo_recv(int fd)
 	return socket_buf;
 }
 
-SR_PRIV char *vjtag_demo_run_cmd(const int fd, const char *cmd)
+SR_PRIV char *gmm7550_ila_run_cmd(const int fd, const char *cmd)
 {
 	char *b;
 	const char *c;
@@ -168,18 +168,18 @@ SR_PRIV char *vjtag_demo_run_cmd(const int fd, const char *cmd)
 
 	sr_dbg("<- %s", cmd);
 
-	return vjtag_demo_recv(fd);
+	return gmm7550_ila_recv(fd);
 }
 
-SR_PRIV int vjtag_demo_check_id(struct vjtag_demo_tcp *tcp)
+SR_PRIV int gmm7550_ila_check_id(struct gmm7550_ila_tcp *tcp)
 {
 	char *res;
 	int fd = tcp->socket;
 
-	res = vjtag_demo_run_cmd(fd, "irscan" TAP_NAME "0x006"); /* IDCODE */
+	res = gmm7550_ila_run_cmd(fd, "irscan" TAP_NAME "0x006"); /* IDCODE */
 	if (!res)
 		return SR_ERR;
-	res = vjtag_demo_run_cmd(fd, "drscan" TAP_NAME "32 0");
+	res = gmm7550_ila_run_cmd(fd, "drscan" TAP_NAME "32 0");
 	if (!res)
 		return SR_ERR;
 
@@ -189,7 +189,7 @@ SR_PRIV int vjtag_demo_check_id(struct vjtag_demo_tcp *tcp)
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_convert_trigger(const struct sr_dev_inst *sdi)
+SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
 {
 	struct dev_context *devc;
 	struct sr_trigger *trigger;
@@ -230,59 +230,59 @@ SR_PRIV int vjtag_demo_convert_trigger(const struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
-SR_PRIV uint32_t vjtag_demo_rw_reg(int fd, uint8_t r, uint8_t l, uint32_t d)
+SR_PRIV uint32_t gmm7550_ila_rw_reg(int fd, uint8_t r, uint8_t l, uint32_t d)
 {
 	char cmd[64];
 	uint32_t ret = 0;
 
 	sprintf(cmd, "vir_scan" TAP_NAME "0x%02x", 0x10 + (r & 0x0f));
-	vjtag_demo_run_cmd(fd, cmd);
+	gmm7550_ila_run_cmd(fd, cmd);
 
 	sprintf(cmd, "vdr_scan" TAP_NAME "%d 0x%x", l, d);
-	sscanf(vjtag_demo_run_cmd(fd, cmd), "%x", &ret);
+	sscanf(gmm7550_ila_run_cmd(fd, cmd), "%x", &ret);
 	return ret;
 }
 
-SR_PRIV int vjtag_demo_configure_trigger(int fd, struct dev_context *devc)
+SR_PRIV int gmm7550_ila_configure_trigger(int fd, struct dev_context *devc)
 {
-	vjtag_demo_rw_reg(fd, 1, 8, 0x80);
-	vjtag_demo_rw_reg(fd, 1, 8, 0x00);
+	gmm7550_ila_rw_reg(fd, 1, 8, 0x80);
+	gmm7550_ila_rw_reg(fd, 1, 8, 0x00);
 
-	vjtag_demo_rw_reg(fd, 4, 8, devc->t_mask);
-	vjtag_demo_rw_reg(fd, 5, 8, devc->t_data);
+	gmm7550_ila_rw_reg(fd, 4, 8, devc->t_mask);
+	gmm7550_ila_rw_reg(fd, 5, 8, devc->t_data);
 
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_configure_pre_store(int fd, struct dev_context *devc)
+SR_PRIV int gmm7550_ila_configure_pre_store(int fd, struct dev_context *devc)
 {
 	uint16_t post_cnt;
 
 	post_cnt = ((devc->limit_samples - 1) * (100 - devc->capture_ratio)) / 100;
-	vjtag_demo_rw_reg(fd, 9, 10, post_cnt);
+	gmm7550_ila_rw_reg(fd, 9, 10, post_cnt);
 
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_acquisition_start(int fd)
+SR_PRIV int gmm7550_ila_acquisition_start(int fd)
 {
-	vjtag_demo_rw_reg(fd, 1, 8, 0x01);
+	gmm7550_ila_rw_reg(fd, 1, 8, 0x01);
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_acquisition_stop(int fd)
+SR_PRIV int gmm7550_ila_acquisition_stop(int fd)
 {
-	vjtag_demo_rw_reg(fd, 1, 8, 0);
+	gmm7550_ila_rw_reg(fd, 1, 8, 0);
 	return SR_OK;
 }
 
-SR_PRIV int vjtag_demo_receive_data(int fd, int revents, void *cb_data)
+SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 {
 	(void)revents;
 
 	const struct sr_dev_inst *sdi;
 	struct dev_context *devc;
-	struct vjtag_demo_tcp *tcp;
+	struct gmm7550_ila_tcp *tcp;
 
 	int i;
 	uint8_t *b;
@@ -305,7 +305,7 @@ SR_PRIV int vjtag_demo_receive_data(int fd, int revents, void *cb_data)
 	struct sr_datafeed_packet packet;
 	struct sr_datafeed_logic logic;
 
-	la_status = vjtag_demo_rw_reg(tcp->socket, 0, 8, 0);
+	la_status = gmm7550_ila_rw_reg(tcp->socket, 0, 8, 0);
 
 	sr_dbg("receive_data(), status = %02x", la_status);
 
@@ -320,10 +320,10 @@ SR_PRIV int vjtag_demo_receive_data(int fd, int revents, void *cb_data)
 			}
 		}
 
-		t_addr = vjtag_demo_rw_reg(tcp->socket, 0x0A, 10, 0);
+		t_addr = gmm7550_ila_rw_reg(tcp->socket, 0x0A, 10, 0);
 		sr_dbg("trigger addr = 0x%x", t_addr);
 
-		post_cnt = vjtag_demo_rw_reg(fd, 9, 10, 0);
+		post_cnt = gmm7550_ila_rw_reg(fd, 9, 10, 0);
 		sr_dbg("post counter = %d", post_cnt);
 
 		pre_cnt = LIMIT_SAMPLES - post_cnt;
@@ -333,10 +333,10 @@ SR_PRIV int vjtag_demo_receive_data(int fd, int revents, void *cb_data)
 
 		/* Send pre-trigger data
 		 */
-		vjtag_demo_rw_reg(tcp->socket, 0x08, 10, start_addr);
+		gmm7550_ila_rw_reg(tcp->socket, 0x08, 10, start_addr);
 		b = devc->raw_sample_buf;
 		for (i = pre_cnt; i > 0; i--)
-			*b++ = vjtag_demo_rw_reg(tcp->socket, 0x02, 8, 0);
+			*b++ = gmm7550_ila_rw_reg(tcp->socket, 0x02, 8, 0);
 
 		packet.type = SR_DF_LOGIC;
 		packet.payload = &logic;
@@ -352,10 +352,10 @@ SR_PRIV int vjtag_demo_receive_data(int fd, int revents, void *cb_data)
 
 		/* Sent post-trigger data
 		 */
-		vjtag_demo_rw_reg(tcp->socket, 0x08, 10, t_addr);
+		gmm7550_ila_rw_reg(tcp->socket, 0x08, 10, t_addr);
 		b = devc->raw_sample_buf;
 		for (i = post_cnt; i > 0; i--)
-			*b++ = vjtag_demo_rw_reg(tcp->socket, 0x02, 8, 0);
+			*b++ = gmm7550_ila_rw_reg(tcp->socket, 0x02, 8, 0);
 
 		packet.type = SR_DF_LOGIC;
 		packet.payload = &logic;
