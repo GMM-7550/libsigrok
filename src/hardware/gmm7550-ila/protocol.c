@@ -20,162 +20,86 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/ioctl.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 
 #include "protocol.h"
 
-#define COMMAND_TOKEN 0x1A
-#define BUF_SIZE 256
+#define DJ_USB_OUT_ENDPOINT 0x01
+#define DJ_USB_IN_ENDPOINT  0x82
+#define DJ_USB_TIMEOUT      1000 /* 100ms */
+#define DJ_USB_BUFFER_SIZE  64
 
-#define TAP_NAME " max10.fpga "
-
-SR_PRIV char socket_buf[BUF_SIZE];
-
-SR_PRIV struct gmm7550_ila_tcp *gmm7550_ila_tcp_new(void)
+static int dj_usb_send(const struct sr_dev_inst *sdi, uint8_t *data, int len)
 {
-	struct gmm7550_ila_tcp *tcp;
+  struct sr_usb_dev_inst *usb = sdi->conn;
+  int ret, sent;
+  GString *text;
 
-	tcp = g_malloc0(sizeof(struct gmm7550_ila_tcp));
-	tcp->address = NULL;
-	tcp->port = NULL;
-	tcp->socket = -1;
+  if (!data || (len == 0))
+    return SR_OK;
 
-	return tcp;
+  if (!usb)
+    return SR_ERR_ARG;
+
+  text = sr_hexdump_new(data, len);
+  sr_dbg("USB sent: %s", text->str);
+  sr_hexdump_free(text);
+
+  ret = libusb_interrupt_transfer(usb->devhdl,
+                                  DJ_USB_OUT_ENDPOINT,
+                                  data,  len,
+                                  &sent, DJ_USB_TIMEOUT);
+  if (ret < 0) {
+    sr_err("USB transmit error: %s.", libusb_error_name(ret));
+    return SR_ERR_IO;
+  }
+  if (sent != len) {
+    sr_err("USB short send: %d/%d bytes.",
+           sent, len);
+    return SR_ERR_IO;
+  }
+  return SR_OK;
 }
 
-SR_PRIV void gmm7550_ila_tcp_free(struct gmm7550_ila_tcp *tcp)
+static int dj_usb_recv(const struct sr_dev_inst *sdi, uint8_t *data, int len)
 {
-	g_free(tcp->address);
-	g_free(tcp->port);
+  struct sr_usb_dev_inst *usb = sdi->conn;
+  int ret, rcvd;
+  GString *text;
+
+  if (!data || !usb)
+    return SR_ERR_ARG;
+
+  ret = libusb_interrupt_transfer(usb->devhdl,
+                                  DJ_USB_IN_ENDPOINT,
+                                  data,  len,
+                                  &rcvd, DJ_USB_TIMEOUT);
+  if (ret < 0) {
+    if (ret == LIBUSB_ERROR_TIMEOUT)
+      sr_dbg("USB receive error: %s.", libusb_error_name(ret));
+    else
+      sr_err("USB receive error: %s.", libusb_error_name(ret));
+    return SR_ERR_IO;
+  }
+
+  text = sr_hexdump_new(data, rcvd);
+  sr_dbg("USB recv: %s", text->str);
+  sr_hexdump_free(text);
+
+  if (rcvd != len) {
+    sr_err("USB short recv: %d/%d bytes.",
+           rcvd, len);
+    return SR_ERR_IO;
+  }
+  return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_tcp_open(struct gmm7550_ila_tcp *tcp)
+SR_PRIV int gmm7550_ila_check_id(const struct sr_dev_inst *sdi)
 {
-	struct addrinfo hints;
-	struct addrinfo *results, *res;
-	int err;
-
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-
-	err = getaddrinfo(tcp->address, tcp->port, &hints, &results);
-
-	if (err) {
-		sr_err("Address lookup failed: %s:%s: %s", tcp->address,
-		       tcp->port, gai_strerror(err));
-		return SR_ERR;
-	}
-
-	for (res = results; res; res = res->ai_next) {
-		if ((tcp->socket = socket(res->ai_family, res->ai_socktype,
-					  res->ai_protocol)) < 0)
-			continue;
-		if (connect(tcp->socket, res->ai_addr, res->ai_addrlen) != 0) {
-			close(tcp->socket);
-			tcp->socket = -1;
-			continue;
-		}
-		break;
-	}
-
-	freeaddrinfo(results);
-
-	if (tcp->socket < 0) {
-		sr_err("Failed to connect to %s:%s: %s", tcp->address, tcp->port,
-		       g_strerror(errno));
-		return SR_ERR;
-	}
-
-	return SR_OK;
-}
-
-SR_PRIV int gmm7550_ila_tcp_close(struct gmm7550_ila_tcp *tcp)
-{
-	int socket = tcp->socket;
-	tcp->socket = -1;
-
-	if (socket > 0) {
-		(void)gmm7550_ila_run_cmd(socket, "exit");
-		if (close(socket) < 0) {
-			sr_err("Close failed: %s", g_strerror(errno));
-			return SR_ERR;
-		}
-	}
-	return SR_OK;
-}
-
-SR_PRIV char *gmm7550_ila_recv(int fd)
-{
-	char *b = socket_buf;
-	int r;
-	int rc = 0;
-
-	while (rc < BUF_SIZE-1) {
-		r = recv(fd, b, 1, 0);
-		if (r < 0) {
-			sr_err("Receive error: %s", g_strerror(errno));
-			return NULL;
-		}
-		if (*b == COMMAND_TOKEN) {
-			*b = '\0';
-			sr_dbg("-> %s", socket_buf);
-			break;
-		}
-		rc++; b++;
-	}
-
-	return socket_buf;
-}
-
-SR_PRIV char *gmm7550_ila_run_cmd(const int fd, const char *cmd)
-{
-	char *b;
-	const char *c;
-	int len;
-	int res;
-
-	len = strlen(cmd);
-
-	if (len > BUF_SIZE-1)
-		return NULL;
-
-	c = cmd;
-	b = socket_buf;
-
-	while ((*b = *c++)) b++;
-	*b = COMMAND_TOKEN;
-
-	res = send(fd, (const char *)socket_buf, len+1, 0);
-
-	if (res < 0) {
-		sr_err("Send error: %s", g_strerror(errno));
-		return NULL;
-	}
-
-	if (res < len+1) {
-		sr_dbg("Send error: sent %d of %d bytes", res, len+1);
-		return NULL;
-	}
-
-	sr_dbg("<- %s", cmd);
-
-	return gmm7550_ila_recv(fd);
-}
-
-SR_PRIV int gmm7550_ila_check_id(struct gmm7550_ila_tcp *tcp)
-{
-	char *res;
-	int fd = tcp->socket;
-
+#if 0
+  char *res;
 	res = gmm7550_ila_run_cmd(fd, "irscan" TAP_NAME "0x006"); /* IDCODE */
 	if (!res)
 		return SR_ERR;
@@ -185,7 +109,7 @@ SR_PRIV int gmm7550_ila_check_id(struct gmm7550_ila_tcp *tcp)
 
 	if (strcmp(res, "031050DD")) /* Altera/Intel 10M50DA device ID */
 		return SR_ERR;
-
+#endif
 	return SR_OK;
 }
 
@@ -224,14 +148,17 @@ SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
 		}
 	}
 
-	sr_dbg("Trigger mask: 0x%02x", devc->t_mask);
-	sr_dbg("Trigger data: 0x%02x", devc->t_data);
+	sr_dbg("Trigger mask: 0x%05x", devc->t_mask);
+	sr_dbg("Trigger data: 0x%05x", devc->t_data);
 
 	return SR_OK;
 }
 
-SR_PRIV uint32_t gmm7550_ila_rw_reg(int fd, uint8_t r, uint8_t l, uint32_t d)
+SR_PRIV uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d)
 {
+#if 1
+  return 0;
+#else
 	char cmd[64];
 	uint32_t ret = 0;
 
@@ -241,43 +168,45 @@ SR_PRIV uint32_t gmm7550_ila_rw_reg(int fd, uint8_t r, uint8_t l, uint32_t d)
 	sprintf(cmd, "vdr_scan" TAP_NAME "%d 0x%x", l, d);
 	sscanf(gmm7550_ila_run_cmd(fd, cmd), "%x", &ret);
 	return ret;
+#endif
 }
 
-SR_PRIV int gmm7550_ila_configure_trigger(int fd, struct dev_context *devc)
+SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct dev_context *devc)
 {
-	gmm7550_ila_rw_reg(fd, 1, 8, 0x80);
-	gmm7550_ila_rw_reg(fd, 1, 8, 0x00);
+	gmm7550_ila_rw_reg(sdi, 1, 8, 0x80);
+	gmm7550_ila_rw_reg(sdi, 1, 8, 0x00);
 
-	gmm7550_ila_rw_reg(fd, 4, 8, devc->t_mask);
-	gmm7550_ila_rw_reg(fd, 5, 8, devc->t_data);
+	gmm7550_ila_rw_reg(sdi, 4, 8, devc->t_mask);
+	gmm7550_ila_rw_reg(sdi, 5, 8, devc->t_data);
 
 	return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_configure_pre_store(int fd, struct dev_context *devc)
+SR_PRIV int gmm7550_ila_configure_pre_store(const struct sr_dev_inst *sdi, struct dev_context *devc)
 {
 	uint16_t post_cnt;
 
 	post_cnt = ((devc->limit_samples - 1) * (100 - devc->capture_ratio)) / 100;
-	gmm7550_ila_rw_reg(fd, 9, 10, post_cnt);
+	gmm7550_ila_rw_reg(sdi, 9, 10, post_cnt);
 
 	return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_acquisition_start(int fd)
+SR_PRIV int gmm7550_ila_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	gmm7550_ila_rw_reg(fd, 1, 8, 0x01);
+	gmm7550_ila_rw_reg(sdi, 1, 8, 0x01);
 	return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_acquisition_stop(int fd)
+SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi)
 {
-	gmm7550_ila_rw_reg(fd, 1, 8, 0);
+	gmm7550_ila_rw_reg(sdi, 1, 8, 0);
 	return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
+SR_PRIV int gmm7550_ila_receive_data(const struct sr_dev_inst *sdi, int revents, void *cb_data)
 {
+#if 0
 	(void)revents;
 
 	const struct sr_dev_inst *sdi;
@@ -371,6 +300,6 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 		sr_session_source_remove(sdi->session, fd);
 		std_session_send_df_end(sdi);
 	}
-
+#endif
 	return TRUE;
 }

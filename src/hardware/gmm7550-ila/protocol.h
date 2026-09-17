@@ -27,15 +27,9 @@
 
 #define LOG_PREFIX "gmm7550-ila"
 
-#define NUM_CHANNELS  8
+#define NUM_CHANNELS  19
 #define LIMIT_SAMPLES 1024
 #define SAMPLE_RATE   SR_MHZ(25)
-
-struct gmm7550_ila_tcp {
-	char *address;
-	char *port;
-	int socket;
-};
 
 struct dev_context {
         uint64_t limit_samples;
@@ -45,21 +39,16 @@ struct dev_context {
         //uint8_t  t_edge_r;
         //uint8_t  t_edge_f;
         uint8_t * raw_sample_buf;
+        gboolean detached_kernel_driver;
 };
 
-SR_PRIV struct gmm7550_ila_tcp *gmm7550_ila_tcp_new(void);
-SR_PRIV void gmm7550_ila_tcp_free(struct gmm7550_ila_tcp *tcp);
-SR_PRIV int gmm7550_ila_tcp_open(struct gmm7550_ila_tcp *tcp);
-SR_PRIV int gmm7550_ila_tcp_close(struct gmm7550_ila_tcp *tcp);
-SR_PRIV char *gmm7550_ila_recv(const int fd);
-SR_PRIV char *gmm7550_ila_run_cmd(int fd, const char *cmd);
-SR_PRIV int gmm7550_ila_check_id(struct gmm7550_ila_tcp *tcp);
+SR_PRIV int gmm7550_ila_check_id(const struct sr_dev_inst *sdi);
 SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi);
-SR_PRIV uint32_t gmm7550_ila_rw_reg(int fd, uint8_t r, uint8_t l, uint32_t d);
-SR_PRIV int gmm7550_ila_configure_trigger(int fd, struct dev_context *devc);
-SR_PRIV int gmm7550_ila_configure_pre_store(int fd, struct dev_context *devc);
-SR_PRIV int gmm7550_ila_acquisition_start(int fd);
-SR_PRIV int gmm7550_ila_acquisition_stop(int fd);
-SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data);
+SR_PRIV uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d);
+SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct dev_context *devc);
+SR_PRIV int gmm7550_ila_configure_pre_store(const struct sr_dev_inst *sdi, struct dev_context *devc);
+SR_PRIV int gmm7550_ila_acquisition_start(const struct sr_dev_inst *sdi);
+SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi);
+SR_PRIV int gmm7550_ila_receive_data(const struct sr_dev_inst *sdi, int revents, void *cb_data);
 
 #endif
