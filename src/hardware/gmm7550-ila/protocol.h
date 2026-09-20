@@ -27,6 +27,8 @@
 
 #define LOG_PREFIX "gmm7550-ila"
 
+#define ILA_ID 0x1c0ffee1
+
 #define NUM_CHANNELS  19
 #define LIMIT_SAMPLES 1024
 #define SAMPLE_RATE   SR_MHZ(25)
@@ -42,9 +44,11 @@ struct dev_context {
         gboolean detached_kernel_driver;
 };
 
-SR_PRIV int gmm7550_ila_check_id(const struct sr_dev_inst *sdi);
+SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr);
+SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len);
+SR_PRIV uint32_t gmm7550_ila_get_id(libusb_device_handle *dev);
+
 SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi);
-SR_PRIV uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d);
 SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct dev_context *devc);
 SR_PRIV int gmm7550_ila_configure_pre_store(const struct sr_dev_inst *sdi, struct dev_context *devc);
 SR_PRIV int gmm7550_ila_acquisition_start(const struct sr_dev_inst *sdi);

@@ -140,7 +140,13 @@ static int dev_open(struct sr_dev_inst *sdi)
     return SR_ERR;
   }
 
-  return SR_OK;
+  uint32_t id = gmm7550_ila_get_id(usb->devhdl);
+  if (ILA_ID == id) {
+    return SR_OK;
+  } else {
+    sr_err("Unexpected ILA JTAG ID: %08x (expected: %08x).", id, ILA_ID);
+    return SR_ERR;
+  }
 }
 
 static int dev_close(struct sr_dev_inst *sdi)
@@ -184,7 +190,7 @@ static int config_get(uint32_t key, GVariant **data,
   case SR_CONF_CONN:
     if (!sdi || !sdi->conn)
       return SR_ERR_ARG;
-    *data = g_variant_new_printf("%s", sdi->conn);
+    *data = g_variant_new_printf("%s", (char *)sdi->conn);
     break;
   case SR_CONF_NUM_LOGIC_CHANNELS:
     if (!sdi)

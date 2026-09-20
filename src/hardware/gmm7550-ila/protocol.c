@@ -31,26 +31,49 @@
 #define DJ_USB_TIMEOUT      1000 /* 100ms */
 #define DJ_USB_BUFFER_SIZE  64
 
-static int dj_usb_send(const struct sr_dev_inst *sdi, uint8_t *data, int len)
+#define DJ_JTAG_FREQ 6000000 /* == 6 MHz */
+
+/* DirtyJTAG commands */
+#define DJ_CMD_STOP   0x00
+#define DJ_CMD_INFO   0x01
+#define DJ_CMD_FREQ   0x02
+#define DJ_CMD_XFER   0x03
+#define DJ_CMD_SETSIG 0x04
+#define DJ_CMD_GETSIG 0x05
+#define DJ_CMD_CLK    0x06
+
+/* DirtyJTAG signal definitions */
+#define DJ_SIG_TCK (1 << 1)
+#define DJ_SIG_TDI (1 << 2)
+#define DJ_SIG_TDO (1 << 3)
+#define DJ_SIG_TMS (1 << 4)
+
+#define ILA_IR_LENGTH    4
+#define ILA_INSTR_ID     0x1 /* 0001 */
+#define ILA_INSTR_CMD    0x8 /* 1000 */
+#define ILA_INSTR_STATUS 0x8 /* 1000 */
+
+#define ILA_ID_LENGTH   32
+#define ILA_CMD_LENGTH  8
+#define ILA_ADDR_LENGTH 10
+#define ILA_DATA_LENGTH 20
+
+static int dj_usb_send(libusb_device_handle *dev, uint8_t *data, int len)
 {
-  struct sr_usb_dev_inst *usb = sdi->conn;
   int ret, sent;
   GString *text;
 
   if (!data || (len == 0))
     return SR_OK;
 
-  if (!usb)
-    return SR_ERR_ARG;
-
   text = sr_hexdump_new(data, len);
   sr_dbg("USB sent: %s", text->str);
   sr_hexdump_free(text);
 
-  ret = libusb_interrupt_transfer(usb->devhdl,
-                                  DJ_USB_OUT_ENDPOINT,
-                                  data,  len,
-                                  &sent, DJ_USB_TIMEOUT);
+  ret = libusb_bulk_transfer(dev,
+                             DJ_USB_OUT_ENDPOINT,
+                             data,  len,
+                             &sent, DJ_USB_TIMEOUT);
   if (ret < 0) {
     sr_err("USB transmit error: %s.", libusb_error_name(ret));
     return SR_ERR_IO;
@@ -63,19 +86,18 @@ static int dj_usb_send(const struct sr_dev_inst *sdi, uint8_t *data, int len)
   return SR_OK;
 }
 
-static int dj_usb_recv(const struct sr_dev_inst *sdi, uint8_t *data, int len)
+static int dj_usb_recv(libusb_device_handle *dev, uint8_t *data, int len)
 {
-  struct sr_usb_dev_inst *usb = sdi->conn;
   int ret, rcvd;
   GString *text;
 
-  if (!data || !usb)
+  if (!data)
     return SR_ERR_ARG;
 
-  ret = libusb_interrupt_transfer(usb->devhdl,
-                                  DJ_USB_IN_ENDPOINT,
-                                  data,  len,
-                                  &rcvd, DJ_USB_TIMEOUT);
+  ret = libusb_bulk_transfer(dev,
+                             DJ_USB_IN_ENDPOINT,
+                             data,  len,
+                             &rcvd, DJ_USB_TIMEOUT);
   if (ret < 0) {
     if (ret == LIBUSB_ERROR_TIMEOUT)
       sr_dbg("USB receive error: %s.", libusb_error_name(ret));
@@ -96,21 +118,216 @@ static int dj_usb_recv(const struct sr_dev_inst *sdi, uint8_t *data, int len)
   return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_check_id(const struct sr_dev_inst *sdi)
+static int dj_init(libusb_device_handle *dev)
 {
-#if 0
-  char *res;
-	res = gmm7550_ila_run_cmd(fd, "irscan" TAP_NAME "0x006"); /* IDCODE */
-	if (!res)
-		return SR_ERR;
-	res = gmm7550_ila_run_cmd(fd, "drscan" TAP_NAME "32 0");
-	if (!res)
-		return SR_ERR;
+  const uint16_t freq_kHz = DJ_JTAG_FREQ / 1000; /* kHz */
+  const int cmd_size = 15;
+  uint8_t cmd[cmd_size];
 
-	if (strcmp(res, "031050DD")) /* Altera/Intel 10M50DA device ID */
-		return SR_ERR;
-#endif
-	return SR_OK;
+  cmd[0] = DJ_CMD_FREQ;
+  cmd[1] = (freq_kHz >> 8) & 0xff;
+  cmd[2] = freq_kHz & 0xff;
+
+  cmd[3] = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK; /* mask */
+  cmd[5] = DJ_SIG_TDI | DJ_SIG_TMS;              /* value */
+
+  cmd[6] = DJ_CMD_CLK;
+  cmd[7] = DJ_SIG_TDI | DJ_SIG_TMS;
+  cmd[8] = 5+1; /* go to Test-Logic-Reset state from any other state + 1 clock */
+
+  cmd[9] = DJ_CMD_SETSIG;
+  cmd[10]= DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[11]=              DJ_SIG_TCK; /* Run-Test/Idle */
+
+  cmd[12] = DJ_CMD_SETSIG;
+  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[14] = 0;
+
+  return dj_usb_send(dev, cmd, cmd_size);
+}
+SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, const uint32_t in, int len)
+{
+  uint8_t cmd[15], rcv;
+  uint32_t out = 0;
+  int i, ret;
+
+  for (i=len; i; i--) {
+    cmd[0] = DJ_CMD_SETSIG;
+    cmd[1] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK;
+    cmd[2] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
+
+    cmd[3] = DJ_CMD_SETSIG;
+    cmd[4] = DJ_SIG_TCK;
+    cmd[5] = DJ_SIG_TCK; /* Shift-xR or Exit1-xR */
+
+    cmd[7] = DJ_CMD_GETSIG; /* TODO -- low TCK before reading TDO ??? */
+
+    (void) dj_usb_send(dev, cmd, 7);
+    ret = dj_usb_recv(dev, &rcv, 1);
+    if (ret != SR_OK) {
+      sr_err("USB receive error: %s.", libusb_error_name(ret));
+      rcv = 0;
+    }
+    out >>= 1;
+    out |= rcv ? 0x80000000 : 0;
+  }
+
+  /* Exit1-xR, TCK = 1 */
+  cmd[0] = DJ_CMD_SETSIG;
+  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[2] = DJ_SIG_TMS;
+
+  cmd[3] = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TCK; /* Update-xR */
+
+  cmd[6] = DJ_CMD_SETSIG;
+  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[8] = 0;
+
+  cmd[9] = DJ_CMD_SETSIG;
+  cmd[10]= DJ_SIG_TCK;
+  cmd[11]= DJ_SIG_TCK; /* Run-Test/Idle */
+
+  cmd[12]= DJ_CMD_SETSIG;
+  cmd[13]= DJ_SIG_TCK;
+  cmd[14]= 0;
+
+  (void) dj_usb_send(dev, cmd, 15);
+
+  out >>= 32 - len;
+  return out;
+}
+
+SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
+{
+  const int cmd_size = 24;
+  uint8_t cmd[cmd_size];
+
+  /* Run-Test/Idle -> ... */
+  cmd[0] = DJ_CMD_SETSIG;
+  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[2] = DJ_SIG_TMS;
+
+  cmd[3] = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-DR-Scan */
+
+  cmd[6] = DJ_CMD_SETSIG;
+  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[8] = DJ_SIG_TMS;
+
+  cmd[9]  = DJ_CMD_SETSIG;
+  cmd[10] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[11] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-IR-Scan */
+
+  cmd[12] = DJ_CMD_SETSIG;
+  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[14] = 0;
+
+  cmd[15] = DJ_CMD_SETSIG;
+  cmd[16] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[17] =              DJ_SIG_TCK; /* Capture-IR */
+
+  cmd[18] = DJ_CMD_SETSIG;
+  cmd[19] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[20] = 0;
+
+  cmd[21] = DJ_CMD_SETSIG;
+  cmd[22] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[23] =              DJ_SIG_TCK; /* Shift-IR */
+
+  (void) dj_usb_send(dev, cmd, cmd_size);
+  (void) dj_shift(dev, instr, ILA_IR_LENGTH); /* Exit1-IR */
+
+  cmd[0] = DJ_CMD_SETSIG;
+  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[2] = DJ_SIG_TMS;
+
+  cmd[3]  = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Update-IR */
+
+  cmd[6] = DJ_CMD_SETSIG;
+  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[8] = 0;
+
+  cmd[9]  = DJ_CMD_SETSIG;
+  cmd[10] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[11] =              DJ_SIG_TCK; /* Run-Test/Idle */
+
+  cmd[12] = DJ_CMD_SETSIG;
+  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[14] = 0;
+
+  return dj_usb_send(dev, cmd, 15);
+}
+
+SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len)
+{
+  const int cmd_size = 18;
+  uint8_t cmd[cmd_size];
+  uint32_t out;
+
+  /* Run-Test/Idle -> ... */
+  cmd[0] = DJ_CMD_SETSIG;
+  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[2] = DJ_SIG_TMS;
+
+  cmd[3] = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-DR-Scan */
+
+  cmd[6] = DJ_CMD_SETSIG;
+  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[8] = 0;
+
+  cmd[9] = DJ_CMD_SETSIG;
+  cmd[10]= DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[11]=              DJ_SIG_TCK; /* Capture-DR */
+
+  cmd[12]= DJ_CMD_SETSIG;
+  cmd[13]= DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[14]= 0;
+
+  cmd[15]= DJ_CMD_SETSIG;
+  cmd[16]= DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[17]=              DJ_SIG_TCK; /* Shift-DR */
+
+  (void) dj_usb_send(dev, cmd, cmd_size);
+  out = dj_shift(dev, data, len);   /* Exit1-DR */
+
+  cmd[0] = DJ_CMD_SETSIG;
+  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[2] = DJ_SIG_TMS;
+
+  cmd[3]  = DJ_CMD_SETSIG;
+  cmd[4] = DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TCK; /* Update-DR */
+
+  cmd[6] = DJ_CMD_SETSIG;
+  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[8] = 0;
+
+  cmd[9]  = DJ_CMD_SETSIG;
+  cmd[10] = DJ_SIG_TCK;
+  cmd[11] = DJ_SIG_TCK; /* Run-Test/Idle */
+
+  cmd[12] = DJ_CMD_SETSIG;
+  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[14] = 0;
+
+  return out;
+}
+
+SR_PRIV uint32_t gmm7550_ila_get_id(libusb_device_handle *dev)
+{
+  uint32_t id = 0;
+
+  (void) dj_init(dev);
+  (void) gmm7550_ila_set_ir(dev, ILA_INSTR_ID);
+  return gmm7550_ila_get_set_dr(dev, 0, ILA_ID_LENGTH);
 }
 
 SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
