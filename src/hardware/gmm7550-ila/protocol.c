@@ -121,7 +121,7 @@ static int dj_usb_recv(libusb_device_handle *dev, uint8_t *data, int len)
 static int dj_init(libusb_device_handle *dev)
 {
   const uint16_t freq_kHz = DJ_JTAG_FREQ / 1000; /* kHz */
-  const int cmd_size = 15;
+  const int cmd_size = 18;
   uint8_t cmd[cmd_size];
 
   cmd[0] = DJ_CMD_FREQ;
@@ -134,19 +134,23 @@ static int dj_init(libusb_device_handle *dev)
 
   cmd[6] = DJ_CMD_CLK;
   cmd[7] = DJ_SIG_TDI | DJ_SIG_TMS;
-  cmd[8] = 5+1; /* go to Test-Logic-Reset state from any other state + 1 clock */
+  cmd[8] = 5; /* go to Test-Logic-Reset state from any other state */
 
-  cmd[9] = DJ_CMD_SETSIG;
-  cmd[10]= DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[11]=              DJ_SIG_TCK; /* Run-Test/Idle */
+  cmd[ 9] = DJ_CMD_SETSIG;
+  cmd[10] = DJ_SIG_TMS;
+  cmd[11] = 0;
 
   cmd[12] = DJ_CMD_SETSIG;
-  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[14] = 0;
+  cmd[13] = DJ_SIG_TCK;
+  cmd[14] = DJ_SIG_TCK; /* Run-Test / Idle */
+
+  cmd[15] = DJ_CMD_SETSIG;
+  cmd[16] = DJ_SIG_TCK;
+  cmd[17] = 0;
 
   return dj_usb_send(dev, cmd, cmd_size);
 }
-SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, const uint32_t in, int len)
+SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
   uint8_t cmd[15], rcv;
   uint32_t out = 0;
@@ -156,21 +160,24 @@ SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, const uint32_t in, int len)
     cmd[0] = DJ_CMD_SETSIG;
     cmd[1] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK;
     cmd[2] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
+    in >>= 1;
 
     cmd[3] = DJ_CMD_SETSIG;
     cmd[4] = DJ_SIG_TCK;
     cmd[5] = DJ_SIG_TCK; /* Shift-xR or Exit1-xR */
 
-    cmd[7] = DJ_CMD_GETSIG; /* TODO -- low TCK before reading TDO ??? */
+    (void) dj_usb_send(dev, cmd, 6);
 
-    (void) dj_usb_send(dev, cmd, 7);
+    cmd[0] = DJ_CMD_GETSIG;
+    (void) dj_usb_send(dev, cmd, 1);
     ret = dj_usb_recv(dev, &rcv, 1);
+
     if (ret != SR_OK) {
       sr_err("USB receive error: %s.", libusb_error_name(ret));
       rcv = 0;
     }
     out >>= 1;
-    out |= rcv ? 0x80000000 : 0;
+    out |= (rcv & DJ_SIG_TDO) ? 0x80000000 : 0;
   }
 
   /* Exit1-xR, TCK = 1 */
@@ -272,28 +279,28 @@ SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data
 
   /* Run-Test/Idle -> ... */
   cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[1] = DJ_SIG_TMS;
   cmd[2] = DJ_SIG_TMS;
 
   cmd[3] = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-DR-Scan */
+  cmd[4] = DJ_SIG_TCK;
+  cmd[5] = DJ_SIG_TCK; /* Select-DR-Scan */
 
   cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[7] = DJ_SIG_TMS;
   cmd[8] = 0;
 
   cmd[9] = DJ_CMD_SETSIG;
-  cmd[10]= DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[11]=              DJ_SIG_TCK; /* Capture-DR */
+  cmd[10]= DJ_SIG_TCK;
+  cmd[11]= DJ_SIG_TCK; /* Capture-DR */
 
   cmd[12]= DJ_CMD_SETSIG;
-  cmd[13]= DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[13]= DJ_SIG_TMS;
   cmd[14]= 0;
 
   cmd[15]= DJ_CMD_SETSIG;
-  cmd[16]= DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[17]=              DJ_SIG_TCK; /* Shift-DR */
+  cmd[16]= DJ_SIG_TCK;
+  cmd[17]= DJ_SIG_TCK; /* Shift-DR */
 
   (void) dj_usb_send(dev, cmd, cmd_size);
   out = dj_shift(dev, data, len);   /* Exit1-DR */
