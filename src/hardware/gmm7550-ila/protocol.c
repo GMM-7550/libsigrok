@@ -43,7 +43,6 @@
 #define DJ_CMD_CLK    0x06
 
 #define MAX_CMD_CNT   32
-#define ADD_CMD(a, cnt, cmd) a[cnt++]=(cmd)
 
 /* DirtyJTAG signal definitions */
 #define DJ_SIG_TCK (1 << 1)
@@ -127,49 +126,51 @@ static int dj_init(libusb_device_handle *dev)
   int cmd_cnt = 0;
   uint8_t cmd[MAX_CMD_CNT];
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_FREQ);
-  ADD_CMD(cmd, cmd_cnt, (freq_kHz >> 8) & 0xff);
-  ADD_CMD(cmd, cmd_cnt, freq_kHz & 0xff);
+  cmd[cmd_cnt++] = DJ_CMD_FREQ;
+  cmd[cmd_cnt++] = (freq_kHz >> 8) & 0xff;
+  cmd[cmd_cnt++] = freq_kHz & 0xff;
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK); /* mask */
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS);              /* value */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK; /* mask */
+  cmd[cmd_cnt++] = DJ_SIG_TDI | DJ_SIG_TMS;              /* value */
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_CLK);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS);
-  ADD_CMD(cmd, cmd_cnt, 5); /* go to Test-Logic-Reset state from any other state */
+  cmd[cmd_cnt++] = DJ_CMD_CLK;
+  cmd[cmd_cnt++] = DJ_SIG_TDI | DJ_SIG_TMS;
+  cmd[cmd_cnt++] = 5; /* go to Test-Logic-Reset state from any other state */
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TMS);
-  ADD_CMD(cmd, cmd_cnt, 0);
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = 0;
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK); /* Run-Test / Idle */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Run-Test / Idle */
 
-  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
-  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK);
-  ADD_CMD(cmd, cmd_cnt, 0);
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
   return dj_usb_send(dev, cmd, cmd_cnt);
 }
 SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
-  uint8_t cmd[15], rcv;
+  uint8_t cmd[MAX_CMD_CNT], rcv;
+  int cmd_cnt;
   uint32_t out = 0;
   int i, ret;
 
   for (i=len; i; i--) {
-    cmd[0] = DJ_CMD_SETSIG;
-    cmd[1] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK;
-    cmd[2] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
+    cmd_cnt = 0;
+    cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+    cmd[cmd_cnt++] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK;
+    cmd[cmd_cnt++] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
     in >>= 1;
 
-    cmd[3] = DJ_CMD_SETSIG;
-    cmd[4] = DJ_SIG_TCK;
-    cmd[5] = DJ_SIG_TCK; /* Shift-xR or Exit1-xR */
+    cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+    cmd[cmd_cnt++] = DJ_SIG_TCK;
+    cmd[cmd_cnt++] = DJ_SIG_TCK; /* Shift-xR or Exit1-xR */
 
-    (void) dj_usb_send(dev, cmd, 6);
+    (void) dj_usb_send(dev, cmd, cmd_cnt);
 
     cmd[0] = DJ_CMD_GETSIG;
     (void) dj_usb_send(dev, cmd, 1);
@@ -184,27 +185,28 @@ SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   }
 
   /* Exit1-xR, TCK = 1 */
-  cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[2] = DJ_SIG_TMS;
+  cmd_cnt = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[3] = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TCK; /* Update-xR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Update-xR */
 
-  cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[8] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[9] = DJ_CMD_SETSIG;
-  cmd[10]= DJ_SIG_TCK;
-  cmd[11]= DJ_SIG_TCK; /* Run-Test/Idle */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Run-Test/Idle */
 
-  cmd[12]= DJ_CMD_SETSIG;
-  cmd[13]= DJ_SIG_TCK;
-  cmd[14]= 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  (void) dj_usb_send(dev, cmd, 15);
+  (void) dj_usb_send(dev, cmd, cmd_cnt);
 
   out >>= 32 - len;
   return out;
@@ -212,121 +214,125 @@ SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 
 SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
 {
-  const int cmd_size = 24;
-  uint8_t cmd[cmd_size];
+  int cmd_cnt = 0;
+  uint8_t cmd[MAX_CMD_CNT];
 
   /* Run-Test/Idle -> ... */
-  cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[2] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[3] = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-DR-Scan */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-DR-Scan */
 
-  cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[8] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[9]  = DJ_CMD_SETSIG;
-  cmd[10] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[11] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-IR-Scan */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK; /* Select-IR-Scan */
 
-  cmd[12] = DJ_CMD_SETSIG;
-  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[14] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[15] = DJ_CMD_SETSIG;
-  cmd[16] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[17] =              DJ_SIG_TCK; /* Capture-IR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] =              DJ_SIG_TCK; /* Capture-IR */
 
-  cmd[18] = DJ_CMD_SETSIG;
-  cmd[19] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[20] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[21] = DJ_CMD_SETSIG;
-  cmd[22] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[23] =              DJ_SIG_TCK; /* Shift-IR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] =              DJ_SIG_TCK; /* Shift-IR */
 
-  (void) dj_usb_send(dev, cmd, cmd_size);
+  (void) dj_usb_send(dev, cmd, cmd_cnt);
   (void) dj_shift(dev, instr, ILA_IR_LENGTH); /* Exit1-IR */
 
-  cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[2] = DJ_SIG_TMS;
+  cmd_cnt = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[3]  = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TMS | DJ_SIG_TCK; /* Update-IR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK; /* Update-IR */
 
-  cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[8] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[9]  = DJ_CMD_SETSIG;
-  cmd[10] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[11] =              DJ_SIG_TCK; /* Run-Test/Idle */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] =              DJ_SIG_TCK; /* Run-Test/Idle */
 
-  cmd[12] = DJ_CMD_SETSIG;
-  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[14] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  return dj_usb_send(dev, cmd, 15);
+  return dj_usb_send(dev, cmd, cmd_cnt);
 }
 
 SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len)
 {
-  const int cmd_size = 18;
-  uint8_t cmd[cmd_size];
+  int cmd_cnt = 0;
+  uint8_t cmd[MAX_CMD_CNT];
   uint32_t out;
 
   /* Run-Test/Idle -> ... */
-  cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS;
-  cmd[2] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[3] = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TCK; /* Select-DR-Scan */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Select-DR-Scan */
 
-  cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS;
-  cmd[8] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[9] = DJ_CMD_SETSIG;
-  cmd[10]= DJ_SIG_TCK;
-  cmd[11]= DJ_SIG_TCK; /* Capture-DR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Capture-DR */
 
-  cmd[12]= DJ_CMD_SETSIG;
-  cmd[13]= DJ_SIG_TMS;
-  cmd[14]= 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[15]= DJ_CMD_SETSIG;
-  cmd[16]= DJ_SIG_TCK;
-  cmd[17]= DJ_SIG_TCK; /* Shift-DR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Shift-DR */
 
-  (void) dj_usb_send(dev, cmd, cmd_size);
+  (void) dj_usb_send(dev, cmd, cmd_cnt);
   out = dj_shift(dev, data, len);   /* Exit1-DR */
 
-  cmd[0] = DJ_CMD_SETSIG;
-  cmd[1] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[2] = DJ_SIG_TMS;
+  cmd_cnt = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
 
-  cmd[3]  = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TCK;
-  cmd[5] = DJ_SIG_TCK; /* Update-DR */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Update-DR */
 
-  cmd[6] = DJ_CMD_SETSIG;
-  cmd[7] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[8] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
 
-  cmd[9]  = DJ_CMD_SETSIG;
-  cmd[10] = DJ_SIG_TCK;
-  cmd[11] = DJ_SIG_TCK; /* Run-Test/Idle */
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TCK;
+  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Run-Test/Idle */
 
-  cmd[12] = DJ_CMD_SETSIG;
-  cmd[13] = DJ_SIG_TMS | DJ_SIG_TCK;
-  cmd[14] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | DJ_SIG_TCK;
+  cmd[cmd_cnt++] = 0;
+
+  (void) dj_usb_send(dev, cmd, cmd_cnt);
 
   return out;
 }
