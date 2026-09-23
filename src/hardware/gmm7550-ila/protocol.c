@@ -138,20 +138,13 @@ static int dj_init(libusb_device_handle *dev)
   cmd[cmd_cnt++] = DJ_SIG_TDI | DJ_SIG_TMS;
   cmd[cmd_cnt++] = 5; /* go to Test-Logic-Reset state from any other state */
 
-  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
-  cmd[cmd_cnt++] = DJ_SIG_TMS;
-  cmd[cmd_cnt++] = 0;
-
-  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
-  cmd[cmd_cnt++] = DJ_SIG_TCK;
-  cmd[cmd_cnt++] = DJ_SIG_TCK; /* Run-Test / Idle */
-
-  cmd[cmd_cnt++] = DJ_CMD_SETSIG;
-  cmd[cmd_cnt++] = DJ_SIG_TCK;
-  cmd[cmd_cnt++] = 0;
+  cmd[cmd_cnt++] = DJ_CMD_CLK;
+  cmd[cmd_cnt++] = DJ_SIG_TDI;
+  cmd[cmd_cnt++] = 1; /* Run-Test/Idle */
 
   return dj_usb_send(dev, cmd, cmd_cnt);
 }
+
 SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
   uint8_t cmd[MAX_CMD_CNT], rcv;
@@ -233,14 +226,14 @@ SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data
   /* Run-Test/Idle -> ... */
   cmd[cmd_cnt++] = DJ_CMD_CLK;
   cmd[cmd_cnt++] = DJ_SIG_TMS;
-  cmd[cmd_cnt++] = 1;
+  cmd[cmd_cnt++] = 1; /* Select-DR-Scan */
 
   cmd[cmd_cnt++] = DJ_CMD_CLK;
   cmd[cmd_cnt++] = 0;
   cmd[cmd_cnt++] = 2; /* Shift-DR */
 
   (void) dj_usb_send(dev, cmd, cmd_cnt);
-  out = dj_shift(dev, data, len);   /* Exit1-DR */
+  out = dj_shift(dev, data, len); /* Exit1-DR */
 
   cmd_cnt = 0;
   cmd[cmd_cnt++] = DJ_CMD_CLK;
