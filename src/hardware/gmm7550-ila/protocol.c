@@ -42,6 +42,9 @@
 #define DJ_CMD_GETSIG 0x05
 #define DJ_CMD_CLK    0x06
 
+#define MAX_CMD_CNT   32
+#define ADD_CMD(a, cnt, cmd) a[cnt++]=(cmd)
+
 /* DirtyJTAG signal definitions */
 #define DJ_SIG_TCK (1 << 1)
 #define DJ_SIG_TDI (1 << 2)
@@ -121,34 +124,34 @@ static int dj_usb_recv(libusb_device_handle *dev, uint8_t *data, int len)
 static int dj_init(libusb_device_handle *dev)
 {
   const uint16_t freq_kHz = DJ_JTAG_FREQ / 1000; /* kHz */
-  const int cmd_size = 18;
-  uint8_t cmd[cmd_size];
+  int cmd_cnt = 0;
+  uint8_t cmd[MAX_CMD_CNT];
 
-  cmd[0] = DJ_CMD_FREQ;
-  cmd[1] = (freq_kHz >> 8) & 0xff;
-  cmd[2] = freq_kHz & 0xff;
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_FREQ);
+  ADD_CMD(cmd, cmd_cnt, (freq_kHz >> 8) & 0xff);
+  ADD_CMD(cmd, cmd_cnt, freq_kHz & 0xff);
 
-  cmd[3] = DJ_CMD_SETSIG;
-  cmd[4] = DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK; /* mask */
-  cmd[5] = DJ_SIG_TDI | DJ_SIG_TMS;              /* value */
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS | DJ_SIG_TCK); /* mask */
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS);              /* value */
 
-  cmd[6] = DJ_CMD_CLK;
-  cmd[7] = DJ_SIG_TDI | DJ_SIG_TMS;
-  cmd[8] = 5; /* go to Test-Logic-Reset state from any other state */
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_CLK);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TDI | DJ_SIG_TMS);
+  ADD_CMD(cmd, cmd_cnt, 5); /* go to Test-Logic-Reset state from any other state */
 
-  cmd[ 9] = DJ_CMD_SETSIG;
-  cmd[10] = DJ_SIG_TMS;
-  cmd[11] = 0;
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TMS);
+  ADD_CMD(cmd, cmd_cnt, 0);
 
-  cmd[12] = DJ_CMD_SETSIG;
-  cmd[13] = DJ_SIG_TCK;
-  cmd[14] = DJ_SIG_TCK; /* Run-Test / Idle */
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK); /* Run-Test / Idle */
 
-  cmd[15] = DJ_CMD_SETSIG;
-  cmd[16] = DJ_SIG_TCK;
-  cmd[17] = 0;
+  ADD_CMD(cmd, cmd_cnt, DJ_CMD_SETSIG);
+  ADD_CMD(cmd, cmd_cnt, DJ_SIG_TCK);
+  ADD_CMD(cmd, cmd_cnt, 0);
 
-  return dj_usb_send(dev, cmd, cmd_size);
+  return dj_usb_send(dev, cmd, cmd_cnt);
 }
 SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
