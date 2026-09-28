@@ -54,6 +54,12 @@
 #define ILA_INSTR_ID     0x1 /* 0001 */
 #define ILA_INSTR_CMD    0x8 /* 1000 */
 #define ILA_INSTR_STATUS 0x8 /* 1000 */
+#define ILA_INSTR_DATA   0x9 /* 1001 */
+#define ILA_INSTR_TMASK  0xa /* 1010 */
+#define ILA_INSTR_TDATA  0xb /* 1011 */
+#define ILA_INSTR_ADDR   0xc /* 1100 */
+#define ILA_INSTR_TPOST  0xd /* 1101 */
+#define ILA_INSTR_TADDR  0xe /* 1110 */
 
 #define ILA_ID_LENGTH   32
 #define ILA_CMD_LENGTH  8
@@ -276,28 +282,20 @@ SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
 
 SR_PRIV uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d)
 {
-#if 1
-  return 0;
-#else
-	char cmd[64];
-	uint32_t ret = 0;
+  struct sr_usb_dev_inst *sr_usb = sdi->conn;
+  struct libusb_device_handle *usb = sr_usb->devhdl;
 
-	sprintf(cmd, "vir_scan" TAP_NAME "0x%02x", 0x10 + (r & 0x0f));
-	gmm7550_ila_run_cmd(fd, cmd);
-
-	sprintf(cmd, "vdr_scan" TAP_NAME "%d 0x%x", l, d);
-	sscanf(gmm7550_ila_run_cmd(fd, cmd), "%x", &ret);
-	return ret;
-#endif
+  gmm7550_ila_set_ir(usb, r);
+  return gmm7550_ila_get_set_dr(usb, d, l);
 }
 
 SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct dev_context *devc)
 {
-	gmm7550_ila_rw_reg(sdi, 1, 8, 0x80);
-	gmm7550_ila_rw_reg(sdi, 1, 8, 0x00);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x80);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x00);
 
-	gmm7550_ila_rw_reg(sdi, 4, 8, devc->t_mask);
-	gmm7550_ila_rw_reg(sdi, 5, 8, devc->t_data);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TMASK, ILA_DATA_LENGTH-1, devc->t_mask);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TDATA, ILA_DATA_LENGTH-1, devc->t_data);
 
 	return SR_OK;
 }
@@ -307,119 +305,109 @@ SR_PRIV int gmm7550_ila_configure_pre_store(const struct sr_dev_inst *sdi, struc
 	uint16_t post_cnt;
 
 	post_cnt = ((devc->limit_samples - 1) * (100 - devc->capture_ratio)) / 100;
-	gmm7550_ila_rw_reg(sdi, 9, 10, post_cnt);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, post_cnt);
 
 	return SR_OK;
 }
 
 SR_PRIV int gmm7550_ila_acquisition_start(const struct sr_dev_inst *sdi)
 {
-	gmm7550_ila_rw_reg(sdi, 1, 8, 0x01);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x01);
 	return SR_OK;
 }
 
 SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi)
 {
-	gmm7550_ila_rw_reg(sdi, 1, 8, 0);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0);
 	return SR_OK;
 }
 
 SR_PRIV int gmm7550_ila_receive_data(const struct sr_dev_inst *sdi, int revents, void *cb_data)
 {
-#if 0
-	(void)revents;
+  (void)revents;
 
-	const struct sr_dev_inst *sdi;
-	struct dev_context *devc;
-	struct gmm7550_ila_tcp *tcp;
+  struct dev_context *devc;
+  int i;
+  uint8_t *b;
+  uint8_t la_status;
+  uint16_t t_addr;
+  int16_t start_addr;
+  uint16_t post_cnt, pre_cnt;
 
-	int i;
-	uint8_t *b;
-	uint8_t la_status;
-	uint16_t t_addr;
-	int16_t start_addr;
-	uint16_t post_cnt, pre_cnt;
+  if (!(sdi = cb_data))
+    return FALSE;
 
-	if (!(sdi = cb_data))
-		return FALSE;
+  if (!(devc = sdi->priv))
+    return FALSE;
 
-	if (!(devc = sdi->priv))
-		return FALSE;
+  struct sr_datafeed_packet packet;
+  struct sr_datafeed_logic logic;
 
-	if (!(tcp = sdi->conn))
-		return FALSE;
+  la_status = gmm7550_ila_rw_reg(sdi, ILA_INSTR_STATUS, ILA_CMD_LENGTH, 0);
 
-	fd = tcp->socket;
+  sr_dbg("receive_data(), status = %02x", la_status);
 
-	struct sr_datafeed_packet packet;
-	struct sr_datafeed_logic logic;
+  if (la_status & 0x80) { /* Acqusiont complete */
 
-	la_status = gmm7550_ila_rw_reg(tcp->socket, 0, 8, 0);
+    if (!devc->raw_sample_buf) {
+      devc->raw_sample_buf =
+        g_try_malloc(devc->limit_samples);
+      if (!devc->raw_sample_buf) {
+        sr_err("Sample buffer malloc failed.");
+        return FALSE;
+      }
+    }
 
-	sr_dbg("receive_data(), status = %02x", la_status);
+    t_addr = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TADDR, ILA_ADDR_LENGTH, 0);
+    sr_dbg("trigger addr = 0x%x", t_addr);
 
-	if (la_status & 0x80) { /* Acqusiont complete */
+    post_cnt = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, 0);
+    sr_dbg("post counter = %d", post_cnt);
 
-		if (!devc->raw_sample_buf) {
-			devc->raw_sample_buf =
-				g_try_malloc(devc->limit_samples);
-			if (!devc->raw_sample_buf) {
-				sr_err("Sample buffer malloc failed.");
-				return FALSE;
-			}
-		}
+    pre_cnt = LIMIT_SAMPLES - post_cnt;
+    start_addr = t_addr - pre_cnt;
+    if (start_addr < 0)
+      start_addr += LIMIT_SAMPLES;
 
-		t_addr = gmm7550_ila_rw_reg(tcp->socket, 0x0A, 10, 0);
-		sr_dbg("trigger addr = 0x%x", t_addr);
+    /* Send pre-trigger data
+     */
+    gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, start_addr);
+    b = devc->raw_sample_buf;
+    for (i = pre_cnt; i > 0; i--)
+      *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
 
-		post_cnt = gmm7550_ila_rw_reg(fd, 9, 10, 0);
-		sr_dbg("post counter = %d", post_cnt);
+    packet.type = SR_DF_LOGIC;
+    packet.payload = &logic;
+    logic.length = pre_cnt;
+    logic.unitsize = 1;
+    logic.data = devc->raw_sample_buf;
+    sr_session_send(cb_data, &packet);
 
-		pre_cnt = LIMIT_SAMPLES - post_cnt;
-		start_addr = t_addr - pre_cnt;
-		if (start_addr < 0)
-			start_addr += LIMIT_SAMPLES;
+    /* Mark trigger position
+     */
+    packet.type = SR_DF_TRIGGER;
+    sr_session_send(cb_data, &packet);
 
-		/* Send pre-trigger data
-		 */
-		gmm7550_ila_rw_reg(tcp->socket, 0x08, 10, start_addr);
-		b = devc->raw_sample_buf;
-		for (i = pre_cnt; i > 0; i--)
-			*b++ = gmm7550_ila_rw_reg(tcp->socket, 0x02, 8, 0);
+    /* Sent post-trigger data
+     */
+    gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
+    b = devc->raw_sample_buf;
+    for (i = post_cnt; i > 0; i--)
+      *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
 
-		packet.type = SR_DF_LOGIC;
-		packet.payload = &logic;
-		logic.length = pre_cnt;
-		logic.unitsize = 1;
-		logic.data = devc->raw_sample_buf;
-		sr_session_send(cb_data, &packet);
+    packet.type = SR_DF_LOGIC;
+    packet.payload = &logic;
+    logic.length = post_cnt;
+    logic.unitsize = 1;
+    logic.data = devc->raw_sample_buf;
+    sr_session_send(cb_data, &packet);
 
-		/* Mark trigger position
-		 */
-		packet.type = SR_DF_TRIGGER;
-		sr_session_send(cb_data, &packet);
+    g_free(devc->raw_sample_buf);
+    devc->raw_sample_buf = NULL;
 
-		/* Sent post-trigger data
-		 */
-		gmm7550_ila_rw_reg(tcp->socket, 0x08, 10, t_addr);
-		b = devc->raw_sample_buf;
-		for (i = post_cnt; i > 0; i--)
-			*b++ = gmm7550_ila_rw_reg(tcp->socket, 0x02, 8, 0);
-
-		packet.type = SR_DF_LOGIC;
-		packet.payload = &logic;
-		logic.length = post_cnt;
-		logic.unitsize = 1;
-		logic.data = devc->raw_sample_buf;
-		sr_session_send(cb_data, &packet);
-
-		g_free(devc->raw_sample_buf);
-		devc->raw_sample_buf = NULL;
-
-		sr_dbg("Triggered, stopping acquisition.");
-		sr_session_source_remove(sdi->session, fd);
-		std_session_send_df_end(sdi);
-	}
-#endif
-	return TRUE;
+    sr_dbg("Triggered, stopping acquisition.");
+    // sr_session_source_remove(sdi->session, fd);
+    std_session_send_df_end(sdi);
+  }
+  return TRUE;
 }
