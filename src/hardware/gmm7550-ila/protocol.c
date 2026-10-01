@@ -151,7 +151,7 @@ static int dj_init(libusb_device_handle *dev)
   return dj_usb_send(dev, cmd, cmd_cnt);
 }
 
-SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
+static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
   uint8_t cmd[MAX_CMD_CNT], rcv;
   int cmd_cnt;
@@ -194,7 +194,7 @@ SR_PRIV uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   return out;
 }
 
-SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
+static int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
 {
   int cmd_cnt = 0;
   uint8_t cmd[MAX_CMD_CNT];
@@ -214,7 +214,7 @@ SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
   return SR_OK;
 }
 
-SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len)
+static uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len)
 {
   int cmd_cnt = 0;
   uint8_t cmd[MAX_CMD_CNT];
@@ -280,7 +280,7 @@ SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
-SR_PRIV uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d)
+static uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uint8_t l, uint32_t d)
 {
   struct sr_usb_dev_inst *sr_usb = sdi->conn;
   struct libusb_device_handle *usb = sr_usb->devhdl;
@@ -322,10 +322,12 @@ SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
-SR_PRIV int gmm7550_ila_receive_data(const struct sr_dev_inst *sdi, int revents, void *cb_data)
+SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 {
+  (void)fd;
   (void)revents;
 
+  struct sr_dev_inst *sdi;
   struct dev_context *devc;
   int i;
   uint8_t *b;

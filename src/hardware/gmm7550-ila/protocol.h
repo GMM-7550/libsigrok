@@ -44,8 +44,6 @@ struct dev_context {
         gboolean detached_kernel_driver;
 };
 
-SR_PRIV int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr);
-SR_PRIV uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len);
 SR_PRIV uint32_t gmm7550_ila_get_id(libusb_device_handle *dev);
 
 SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi);
@@ -53,6 +51,6 @@ SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct 
 SR_PRIV int gmm7550_ila_configure_pre_store(const struct sr_dev_inst *sdi, struct dev_context *devc);
 SR_PRIV int gmm7550_ila_acquisition_start(const struct sr_dev_inst *sdi);
 SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi);
-SR_PRIV int gmm7550_ila_receive_data(const struct sr_dev_inst *sdi, int revents, void *cb_data);
+SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data);
 
 #endif

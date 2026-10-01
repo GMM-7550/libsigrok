@@ -29,7 +29,6 @@ static const uint32_t scanopts[] = {
 };
 
 static const uint32_t drvopts[] = {
-  SR_CONF_DEMO_DEV,
   SR_CONF_LOGIC_ANALYZER,
 };
 
@@ -252,17 +251,18 @@ static int config_list(uint32_t key, GVariant **data,
 
 static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 {
-  // struct gmm7550_ila_tcp *tcp = sdi->conn;
   struct dev_context *devc = sdi->priv;
+  struct sr_dev_driver *di = sdi->driver;
+  struct drv_context *drvc = di->context;
 
   gmm7550_ila_convert_trigger(sdi);
-  // gmm7550_ila_configure_trigger(tcp->socket, devc);
-  // gmm7550_ila_configure_pre_store(tcp->socket, devc);
+  gmm7550_ila_configure_trigger(sdi, devc);
+  gmm7550_ila_configure_pre_store(sdi, devc);
 
-  // sr_session_source_add(sdi->session, tcp->socket, G_IO_IN, 100,
-  //                       gmm7550_ila_receive_data, (struct sr_dev_inst *)sdi);
+  usb_source_add(sdi->session, drvc->sr_ctx, 100,
+                 gmm7550_ila_receive_data, (void *)sdi);
 
-  // gmm7550_ila_acquisition_start(tcp->socket);
+  gmm7550_ila_acquisition_start(sdi);
 
   std_session_send_df_header(sdi);
 
@@ -271,13 +271,13 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 
 static int dev_acquisition_stop(struct sr_dev_inst *sdi)
 {
-  //struct gmm7550_ila_tcp *tcp = sdi->conn;
-  //struct dev_context *devc = sdi->priv;
+  struct sr_dev_driver *di = sdi->driver;
+  struct drv_context *drvc = di->context;
 
   std_session_send_df_end(sdi);
-  //sr_session_source_remove(sdi->session, tcp->socket);
+  usb_source_remove(sdi->session, drvc->sr_ctx);
 
-  //gmm7550_ila_acquisition_stop(tcp->socket);
+  gmm7550_ila_acquisition_stop(sdi);
 
   return SR_OK;
 }
