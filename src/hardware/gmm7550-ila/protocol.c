@@ -52,7 +52,7 @@
 
 #define ILA_IR_LENGTH    4
 #define ILA_INSTR_ID     0x1 /* 0001 */
-#define ILA_INSTR_CMD    0x8 /* 1000 */
+#define ILA_INSTR_CMD    0x7 /* 0111 */
 #define ILA_INSTR_STATUS 0x8 /* 1000 */
 #define ILA_INSTR_DATA   0x9 /* 1001 */
 #define ILA_INSTR_TMASK  0xa /* 1010 */
