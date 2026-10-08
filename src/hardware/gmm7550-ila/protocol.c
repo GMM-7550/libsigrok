@@ -260,7 +260,7 @@ SR_PRIV int gmm7550_ila_convert_trigger(const struct sr_dev_inst *sdi)
 		stage = l->data;
 		for (m = stage->matches; m; m = m->next) {
 			match = m->data;
-			uint8_t bit = 1 << (match->channel->index % 8);
+			uint32_t bit = 1 << (match->channel->index);
 			if (!match->channel->enabled)
 				continue;
 
@@ -330,7 +330,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
   struct sr_dev_inst *sdi;
   struct dev_context *devc;
   int i;
-  uint8_t *b;
+  uint32_t *b;
   uint8_t la_status;
   uint16_t t_addr;
   int16_t start_addr;
@@ -374,7 +374,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     /* Send pre-trigger data
      */
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, start_addr);
-    b = devc->raw_sample_buf;
+    b = (uint32_t *)devc->raw_sample_buf;
     for (i = pre_cnt; i > 0; i--)
       *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
 
@@ -393,7 +393,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     /* Sent post-trigger data
      */
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
-    b = devc->raw_sample_buf;
+    b = (uint32_t *)devc->raw_sample_buf;
     for (i = post_cnt; i > 0; i--)
       *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
 

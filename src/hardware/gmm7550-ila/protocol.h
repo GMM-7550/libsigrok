@@ -36,10 +36,8 @@
 struct dev_context {
         uint64_t limit_samples;
 	uint64_t capture_ratio;
-        uint8_t  t_mask;
-        uint8_t  t_data;
-        //uint8_t  t_edge_r;
-        //uint8_t  t_edge_f;
+        uint32_t t_mask;
+        uint32_t t_data;
         uint8_t * raw_sample_buf;
         gboolean detached_kernel_driver;
 };
