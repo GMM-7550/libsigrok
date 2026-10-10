@@ -52,13 +52,13 @@
 
 #define ILA_IR_LENGTH    4
 #define ILA_INSTR_ID     0x1 /* 0001 */
-#define ILA_INSTR_CMD    0x7 /* 0111 */
-#define ILA_INSTR_STATUS 0x8 /* 1000 */
-#define ILA_INSTR_DATA   0x9 /* 1001 */
-#define ILA_INSTR_TMASK  0xa /* 1010 */
-#define ILA_INSTR_TDATA  0xb /* 1011 */
-#define ILA_INSTR_ADDR   0xc /* 1100 */
-#define ILA_INSTR_TPOST  0xd /* 1101 */
+#define ILA_INSTR_CMD    0x4 /* 0100 */
+#define ILA_INSTR_STATUS 0x5 /* 0101 */
+#define ILA_INSTR_DATA   0x6 /* 0110 */
+#define ILA_INSTR_ADDR   0x7 /* 0111 */
+#define ILA_INSTR_TDATA  0x8 /* 1000 */
+#define ILA_INSTR_TMASK  0x9 /* 1001 */
+#define ILA_INSTR_TPOST  0xa /* 1010 */
 #define ILA_INSTR_TADDR  0xe /* 1110 */
 
 #define ILA_ID_LENGTH   32
