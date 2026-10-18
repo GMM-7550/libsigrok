@@ -35,7 +35,7 @@ static const uint32_t drvopts[] = {
 static const uint32_t devopts[] = {
   SR_CONF_CONN | SR_CONF_GET,
   SR_CONF_NUM_LOGIC_CHANNELS | SR_CONF_GET,
-  SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_LIST,
+  // SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_LIST,
   SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
   SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
 };
@@ -274,10 +274,10 @@ static int dev_acquisition_stop(struct sr_dev_inst *sdi)
   struct sr_dev_driver *di = sdi->driver;
   struct drv_context *drvc = di->context;
 
+  gmm7550_ila_acquisition_stop(sdi);
+
   std_session_send_df_end(sdi);
   usb_source_remove(sdi->session, drvc->sr_ctx);
-
-  gmm7550_ila_acquisition_stop(sdi);
 
   return SR_OK;
 }

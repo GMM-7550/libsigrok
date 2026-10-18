@@ -29,8 +29,8 @@
 
 #define ILA_ID 0x1c0ffee1
 
-#define NUM_CHANNELS  19
-#define LIMIT_SAMPLES 1024
+#define NUM_CHANNELS  20
+#define LIMIT_SAMPLES 2048
 #define SAMPLE_RATE   SR_MHZ(25)
 
 struct dev_context {

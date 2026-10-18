@@ -31,7 +31,7 @@
 #define DJ_USB_TIMEOUT      1000 /* 100ms */
 #define DJ_USB_BUFFER_SIZE  64
 
-#define DJ_JTAG_FREQ 6000000 /* == 6 MHz */
+#define DJ_JTAG_FREQ 5000000 /* == 5 MHz */
 
 /* DirtyJTAG commands */
 #define DJ_CMD_STOP   0x00
@@ -63,7 +63,7 @@
 
 #define ILA_ID_LENGTH   32
 #define ILA_CMD_LENGTH  8
-#define ILA_ADDR_LENGTH 10
+#define ILA_ADDR_LENGTH 11
 #define ILA_DATA_LENGTH 20
 
 static int dj_usb_send(libusb_device_handle *dev, uint8_t *data, int len)
@@ -294,8 +294,8 @@ SR_PRIV int gmm7550_ila_configure_trigger(const struct sr_dev_inst *sdi, struct 
 	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x80);
 	gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x00);
 
-	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TMASK, ILA_DATA_LENGTH-1, devc->t_mask);
-	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TDATA, ILA_DATA_LENGTH-1, devc->t_data);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TMASK, ILA_DATA_LENGTH, devc->t_mask);
+	gmm7550_ila_rw_reg(sdi, ILA_INSTR_TDATA, ILA_DATA_LENGTH, devc->t_data);
 
 	return SR_OK;
 }
@@ -361,55 +361,63 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     }
 
     t_addr = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TADDR, ILA_ADDR_LENGTH, 0);
-    sr_dbg("trigger addr = 0x%x", t_addr);
+    sr_err("trigger addr = 0x%x", t_addr);
 
     post_cnt = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, 0);
-    sr_dbg("post counter = %d", post_cnt);
+    sr_err("post counter = %d", post_cnt);
 
     pre_cnt = LIMIT_SAMPLES - post_cnt;
+
     start_addr = t_addr - pre_cnt;
+    sr_err("pre counter = %d", pre_cnt);
     if (start_addr < 0)
       start_addr += LIMIT_SAMPLES;
 
     /* Send pre-trigger data
      */
+    sr_err("*** fetch pre-trigger data");
+    gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x10); /* enable address auto-increment */
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, start_addr);
     b = (uint32_t *)devc->raw_sample_buf;
-    for (i = pre_cnt; i > 0; i--)
+    for (i = pre_cnt; i > 0; i--) {
       *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
+    }
 
     packet.type = SR_DF_LOGIC;
     packet.payload = &logic;
     logic.length = pre_cnt;
-    logic.unitsize = 1;
+    logic.unitsize = 4;
     logic.data = devc->raw_sample_buf;
     sr_session_send(cb_data, &packet);
 
     /* Mark trigger position
      */
+    sr_err("*** mark trigger position");
     packet.type = SR_DF_TRIGGER;
     sr_session_send(cb_data, &packet);
 
     /* Sent post-trigger data
      */
+    sr_err("*** fetch post-trigger data");
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
     b = (uint32_t *)devc->raw_sample_buf;
-    for (i = post_cnt; i > 0; i--)
+    for (i = post_cnt; i > 0; i--) {
       *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
+    }
 
     packet.type = SR_DF_LOGIC;
     packet.payload = &logic;
     logic.length = post_cnt;
-    logic.unitsize = 1;
+    logic.unitsize = 4;
     logic.data = devc->raw_sample_buf;
     sr_session_send(cb_data, &packet);
 
     g_free(devc->raw_sample_buf);
     devc->raw_sample_buf = NULL;
 
-    sr_dbg("Triggered, stopping acquisition.");
-    // sr_session_source_remove(sdi->session, fd);
-    std_session_send_df_end(sdi);
+    sr_err("Triggered, stopping acquisition.");
+    // usb_source_remove(sdi->session, 0);
+    // std_session_send_df_end(sdi);
   }
   return TRUE;
 }
