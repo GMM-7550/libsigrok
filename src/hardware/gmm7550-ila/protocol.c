@@ -353,7 +353,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 
     if (!devc->raw_sample_buf) {
       devc->raw_sample_buf =
-        g_try_malloc(devc->limit_samples);
+        g_try_malloc(4 * devc->limit_samples);
       if (!devc->raw_sample_buf) {
         sr_err("Sample buffer malloc failed.");
         return FALSE;
