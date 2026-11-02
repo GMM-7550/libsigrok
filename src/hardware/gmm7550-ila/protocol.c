@@ -356,6 +356,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
         g_try_malloc(4 * devc->limit_samples);
       if (!devc->raw_sample_buf) {
         sr_err("Sample buffer malloc failed.");
+        sr_dev_acquisition_stop(sdi);
         return FALSE;
       }
     }
@@ -415,9 +416,8 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     g_free(devc->raw_sample_buf);
     devc->raw_sample_buf = NULL;
 
-    sr_err("Triggered, stopping acquisition.");
-    // usb_source_remove(sdi->session, 0);
-    // std_session_send_df_end(sdi);
+    sr_dbg("Triggered, stopping acquisition.");
+    sr_dev_acquisition_stop(sdi);
   }
   return TRUE;
 }
