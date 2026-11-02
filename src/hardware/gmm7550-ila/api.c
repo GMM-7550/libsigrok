@@ -54,6 +54,30 @@ static const uint64_t samplerates[] = {
 
 static struct sr_dev_driver gmm7550_ila_driver_info;
 
+/* Unique per-device connection ID: USB port path, or bus.address as fallback */
+static char *get_connection_id(libusb_context *ctx, struct sr_usb_dev_inst *usb)
+{
+  libusb_device **devlist;
+  char path[64];
+  ssize_t cnt, i;
+
+  cnt = libusb_get_device_list(ctx, &devlist);
+  for (i = 0; i < cnt; i++) {
+    if (libusb_get_bus_number(devlist[i]) != usb->bus ||
+        libusb_get_device_address(devlist[i]) != usb->address)
+      continue;
+    if (usb_get_port_path(devlist[i], path, sizeof(path)) == SR_OK) {
+      libusb_free_device_list(devlist, 1);
+      return g_strdup(path);
+    }
+    break;
+  }
+  if (cnt >= 0)
+    libusb_free_device_list(devlist, 1);
+
+  return g_strdup_printf("%d.%d", usb->bus, usb->address);
+}
+
 static GSList *scan(struct sr_dev_driver *di, GSList *options)
 {
   struct drv_context *drvc = di->context;
@@ -89,7 +113,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
     sdi->status = SR_ST_INACTIVE;
     sdi->inst_type = SR_INST_USB;
     sdi->conn = usb;
-    sdi->connection_id = g_strdup(conn);
+    sdi->connection_id = get_connection_id(drvc->sr_ctx->libusb_ctx, usb);
 
     sdi->vendor = g_strdup("GMM-7550");
     sdi->model = g_strdup("gmm7550-ila");
@@ -106,8 +130,9 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
       sr_channel_new(sdi, i, SR_CHANNEL_LOGIC, TRUE, name);
       g_free(name);
     }
+    devices = g_slist_append(devices, sdi);
   }
-  devices = g_slist_append(devices, sdi);
+  g_slist_free(usb_devices);
   return std_scan_complete(di, devices);
 }
 
@@ -174,7 +199,7 @@ static int dev_close(struct sr_dev_inst *sdi)
   }
 
   libusb_close(usb->devhdl);
-  sdi->conn = NULL;
+  usb->devhdl = NULL;
   return SR_OK;
 }
 
@@ -187,9 +212,9 @@ static int config_get(uint32_t key, GVariant **data,
 
   switch (key) {
   case SR_CONF_CONN:
-    if (!sdi || !sdi->conn)
+    if (!sdi || !sdi->connection_id)
       return SR_ERR_ARG;
-    *data = g_variant_new_printf("%s", (char *)sdi->conn);
+    *data = g_variant_new_string(sdi->connection_id);
     break;
   case SR_CONF_NUM_LOGIC_CHANNELS:
     if (!sdi)
