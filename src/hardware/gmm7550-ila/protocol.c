@@ -362,21 +362,20 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     }
 
     t_addr = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TADDR, ILA_ADDR_LENGTH, 0);
-    sr_err("trigger addr = 0x%x", t_addr);
+    sr_dbg("trigger addr = 0x%x", t_addr);
 
     post_cnt = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, 0);
-    sr_err("post counter = %d", post_cnt);
+    sr_dbg("post counter = %d", post_cnt);
 
     pre_cnt = LIMIT_SAMPLES - post_cnt;
 
     start_addr = t_addr - pre_cnt;
-    sr_err("pre counter = %d", pre_cnt);
+    sr_dbg("pre counter = %d", pre_cnt);
     if (start_addr < 0)
       start_addr += LIMIT_SAMPLES;
 
     /* Send pre-trigger data
      */
-    sr_err("*** fetch pre-trigger data");
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_CMD, ILA_CMD_LENGTH, 0x10); /* enable address auto-increment */
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, start_addr);
     b = (uint32_t *)devc->raw_sample_buf;
@@ -393,13 +392,11 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 
     /* Mark trigger position
      */
-    sr_err("*** mark trigger position");
     packet.type = SR_DF_TRIGGER;
     sr_session_send(cb_data, &packet);
 
     /* Sent post-trigger data
      */
-    sr_err("*** fetch post-trigger data");
     gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
     b = (uint32_t *)devc->raw_sample_buf;
     for (i = post_cnt; i > 0; i--) {
