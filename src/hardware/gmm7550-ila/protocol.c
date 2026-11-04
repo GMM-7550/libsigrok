@@ -41,6 +41,8 @@
 #define DJ_CMD_SETSIG 0x04
 #define DJ_CMD_GETSIG 0x05
 #define DJ_CMD_CLK    0x06
+/* CMD_CLK modifier: return TDO sampled on TCK rising edge */
+#define DJ_CLK_READOUT 0x80
 
 #define MAX_CMD_CNT   32
 
@@ -160,23 +162,20 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 
   for (i=len; i; i--) {
     cmd_cnt = 0;
-    cmd[cmd_cnt++] = DJ_CMD_CLK;
+    cmd[cmd_cnt++] = DJ_CMD_CLK | DJ_CLK_READOUT;
     cmd[cmd_cnt++] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
     cmd[cmd_cnt++] = 1;
     in >>= 1;
 
     (void) dj_usb_send(dev, cmd, cmd_cnt);
-
-    cmd[0] = DJ_CMD_GETSIG;
-    (void) dj_usb_send(dev, cmd, 1);
     ret = dj_usb_recv(dev, &rcv, 1);
 
     if (ret != SR_OK) {
-      sr_err("USB receive error: %s.", libusb_error_name(ret));
+      sr_err("USB receive error: %s.", sr_strerror(ret));
       rcv = 0;
     }
     out >>= 1;
-    out |= (rcv & DJ_SIG_TDO) ? 0x80000000 : 0;
+    out |= rcv ? 0x80000000 : 0;
   } /* Exit1-xR */
 
   cmd_cnt = 0;
