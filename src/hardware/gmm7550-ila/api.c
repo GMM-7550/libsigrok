@@ -117,7 +117,7 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 
     sdi->vendor = g_strdup("GMM-7550");
     sdi->model = g_strdup("gmm7550-ila");
-    sdi->version = g_strdup("v0.1");
+    sdi->version = g_strdup("v0.5");
     sdi->driver = di;
 
     struct dev_context *devc = g_malloc0(sizeof(struct dev_context));
