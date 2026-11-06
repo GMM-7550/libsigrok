@@ -155,15 +155,6 @@ static int dj_init(libusb_device_handle *dev)
   return dj_usb_send(dev, cmd, cmd_cnt);
 }
 
-static inline uint32_t swap_bits(const uint32_t d)
-{
-  uint32_t r;
-  r = ((d<<1) & 0xAAAAAAAA) | ((d>>1) & 0x55555555);
-  r = ((r<<2) & 0xCCCCCCCC) | ((r>>2) & 0x33333333);
-  r = ((r<<4) & 0xF0F0F0F0) | ((r>>4) & 0x0F0F0F0F);
-  return r;
-}
-
 static inline uint8_t swap_bits8(const uint8_t d)
 {
   uint8_t r;
@@ -183,11 +174,14 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   int byte_cnt = (len-1+7) / 8; /* last bit to be transfered separately */
 
   cmd_cnt = 0;
-  cmd[cmd_cnt++] = DJ_CMD_XFER;
-  cmd[cmd_cnt++] = len-1;
+  if (len > 1) {
+    cmd[cmd_cnt++] = DJ_CMD_XFER;
+    cmd[cmd_cnt++] = len-1;
 
-  *(uint32_t *)&cmd[cmd_cnt] = swap_bits(in);
-  cmd_cnt += byte_cnt;
+    for (int i=0; i<byte_cnt; i++) {
+      cmd[cmd_cnt++] = swap_bits8(in >> (8 * i));
+    }
+  }
 
   cmd[cmd_cnt++] = DJ_CMD_CLK | DJ_CLK_READOUT;
   cmd[cmd_cnt++] = DJ_SIG_TMS | (((in >> (len-1)) & 1) ? DJ_SIG_TDI : 0);
@@ -207,13 +201,12 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   ret = dj_usb_recv(dev, rcv, byte_cnt+1);
 
   if (ret != SR_OK) {
-    sr_err("USB receive error: %s.", libusb_error_name(ret));
     return 0;
   }
 
   out = 0;
   for (int i=0; i<byte_cnt; i++) {
-    out |= swap_bits8(rcv[i]) << (8 * i);
+    out |= (uint32_t)swap_bits8(rcv[i]) << (8 * i);
   }
   out |= rcv[byte_cnt] ? (1u << (len-1)) : 0;
 
