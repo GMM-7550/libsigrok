@@ -46,6 +46,10 @@
 
 #define MAX_CMD_CNT   32
 
+/* Number of TMS=1 clocks from Run-Test/Idle to Select-DR/IR-Scan */
+#define SELECT_DR 1
+#define SELECT_IR 2
+
 /* DirtyJTAG signal definitions */
 #define DJ_SIG_TCK (1 << 1)
 #define DJ_SIG_TDI (1 << 2)
@@ -164,7 +168,7 @@ static inline uint8_t swap_bits8(const uint8_t d)
   return r;
 }
 
-static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
+static uint32_t dj_shift(libusb_device_handle *dev, int select, uint32_t in, int len)
 {
   uint8_t cmd[MAX_CMD_CNT];
   int cmd_cnt;
@@ -174,6 +178,16 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   int byte_cnt = (len-1+7) / 8; /* last bit to be transfered separately */
 
   cmd_cnt = 0;
+
+  /* Run-Test/Idle -> ... */
+  cmd[cmd_cnt++] = DJ_CMD_CLK;
+  cmd[cmd_cnt++] = DJ_SIG_TMS;
+  cmd[cmd_cnt++] = select; /* Select-DR-Scan or Select-IR-Scan */
+
+  cmd[cmd_cnt++] = DJ_CMD_CLK;
+  cmd[cmd_cnt++] = 0;
+  cmd[cmd_cnt++] = 2; /* Shift-DR or Shift-IR */
+
   if (len > 1) {
     cmd[cmd_cnt++] = DJ_CMD_XFER;
     cmd[cmd_cnt++] = len-1;
@@ -215,44 +229,14 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 
 static int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
 {
-  int cmd_cnt = 0;
-  uint8_t cmd[MAX_CMD_CNT];
-
-  /* Run-Test/Idle -> ... */
-  cmd[cmd_cnt++] = DJ_CMD_CLK;
-  cmd[cmd_cnt++] = DJ_SIG_TMS;
-  cmd[cmd_cnt++] = 2; /* Select-IR-Scan */
-
-  cmd[cmd_cnt++] = DJ_CMD_CLK;
-  cmd[cmd_cnt++] = 0;
-  cmd[cmd_cnt++] = 2; /* Shift-IR */
-
-  cmd[cmd_cnt++] = DJ_CMD_STOP;
-
-  (void) dj_usb_send(dev, cmd, cmd_cnt);
-  (void) dj_shift(dev, instr, ILA_IR_LENGTH); /* Run-Test/Idle */
+  (void) dj_shift(dev, SELECT_IR, instr, ILA_IR_LENGTH); /* Run-Test/Idle */
 
   return SR_OK;
 }
 
 static uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data, int len)
 {
-  int cmd_cnt = 0;
-  uint8_t cmd[MAX_CMD_CNT];
-
-  /* Run-Test/Idle -> ... */
-  cmd[cmd_cnt++] = DJ_CMD_CLK;
-  cmd[cmd_cnt++] = DJ_SIG_TMS;
-  cmd[cmd_cnt++] = 1; /* Select-DR-Scan */
-
-  cmd[cmd_cnt++] = DJ_CMD_CLK;
-  cmd[cmd_cnt++] = 0;
-  cmd[cmd_cnt++] = 2; /* Shift-DR */
-
-  cmd[cmd_cnt++] = DJ_CMD_STOP;
-
-  (void) dj_usb_send(dev, cmd, cmd_cnt);
-  return dj_shift(dev, data, len); /* Run-Test/Idle */
+  return dj_shift(dev, SELECT_DR, data, len); /* Run-Test/Idle */
 }
 
 SR_PRIV uint32_t gmm7550_ila_get_id(libusb_device_handle *dev)
