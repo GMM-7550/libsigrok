@@ -165,6 +165,7 @@ static int dev_open(struct sr_dev_inst *sdi)
   }
 
   uint32_t id = gmm7550_ila_get_id(usb->devhdl);
+  devc->cur_instr = -1; /* IR set without the cache, or by another tool */
   if (ILA_ID == id) {
     return SR_OK;
   } else {
@@ -280,6 +281,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
   struct sr_dev_driver *di = sdi->driver;
   struct drv_context *drvc = di->context;
 
+  devc->cur_instr = -1; /* FPGA may have been reset or reconfigured */
   gmm7550_ila_convert_trigger(sdi);
   gmm7550_ila_configure_trigger(sdi, devc);
   gmm7550_ila_configure_pre_store(sdi, devc);

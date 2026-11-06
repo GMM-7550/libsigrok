@@ -307,8 +307,12 @@ static uint32_t gmm7550_ila_rw_reg(const struct sr_dev_inst *sdi, uint8_t r, uin
 {
   struct sr_usb_dev_inst *sr_usb = sdi->conn;
   struct libusb_device_handle *usb = sr_usb->devhdl;
+  struct dev_context *devc = sdi->priv;
 
-  gmm7550_ila_set_ir(usb, r);
+  if (devc->cur_instr != r) {
+    gmm7550_ila_set_ir(usb, r);
+    devc->cur_instr = r;
+  }
   return gmm7550_ila_get_set_dr(usb, d, l);
 }
 

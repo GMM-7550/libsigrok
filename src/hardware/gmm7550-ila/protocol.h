@@ -40,6 +40,7 @@ struct dev_context {
         uint32_t t_data;
         uint8_t * raw_sample_buf;
         gboolean detached_kernel_driver;
+        int cur_instr;          /* instruction in the ILA IR, -1 if unknown */
 };
 
 SR_PRIV uint32_t gmm7550_ila_get_id(libusb_device_handle *dev);
