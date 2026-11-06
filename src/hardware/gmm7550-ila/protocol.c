@@ -150,35 +150,49 @@ static int dj_init(libusb_device_handle *dev)
   cmd[cmd_cnt++] = DJ_SIG_TDI;
   cmd[cmd_cnt++] = 1; /* Run-Test/Idle */
 
+  cmd[cmd_cnt++] = DJ_CMD_STOP;
+
   return dj_usb_send(dev, cmd, cmd_cnt);
+}
+
+static inline uint32_t swap_bits(const uint32_t d)
+{
+  uint32_t r;
+  r = ((d<<1) & 0xAAAAAAAA) | ((d>>1) & 0x55555555);
+  r = ((r<<2) & 0xCCCCCCCC) | ((r>>2) & 0x33333333);
+  r = ((r<<4) & 0xF0F0F0F0) | ((r>>4) & 0x0F0F0F0F);
+  return r;
+}
+
+static inline uint8_t swap_bits8(const uint8_t d)
+{
+  uint8_t r;
+  r = ((d<<1) & 0xAA) | ((d>>1) & 0x55);
+  r = ((r<<2) & 0xCC) | ((r>>2) & 0x33);
+  r = ((r<<4) & 0xF0) | ((r>>4) & 0x0F);
+  return r;
 }
 
 static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
 {
-  uint8_t cmd[MAX_CMD_CNT], rcv;
+  uint8_t cmd[MAX_CMD_CNT];
   int cmd_cnt;
-  uint32_t out = 0;
-  int i, ret;
-
-  for (i=len; i; i--) {
-    cmd_cnt = 0;
-    cmd[cmd_cnt++] = DJ_CMD_CLK | DJ_CLK_READOUT;
-    cmd[cmd_cnt++] = ((i==1) ? DJ_SIG_TMS : 0) | ((in&1) ? DJ_SIG_TDI : 0);
-    cmd[cmd_cnt++] = 1;
-    in >>= 1;
-
-    (void) dj_usb_send(dev, cmd, cmd_cnt);
-    ret = dj_usb_recv(dev, &rcv, 1);
-
-    if (ret != SR_OK) {
-      sr_err("USB receive error: %s.", sr_strerror(ret));
-      rcv = 0;
-    }
-    out >>= 1;
-    out |= rcv ? 0x80000000 : 0;
-  } /* Exit1-xR */
+  uint8_t rcv[4+1]; /* up to 31 bit plus one byte for the last (MSB) bit */
+  uint32_t out;
+  int ret;
+  int byte_cnt = (len-1+7) / 8; /* last bit to be transfered separately */
 
   cmd_cnt = 0;
+  cmd[cmd_cnt++] = DJ_CMD_XFER;
+  cmd[cmd_cnt++] = len-1;
+
+  *(uint32_t *)&cmd[cmd_cnt] = swap_bits(in);
+  cmd_cnt += byte_cnt;
+
+  cmd[cmd_cnt++] = DJ_CMD_CLK | DJ_CLK_READOUT;
+  cmd[cmd_cnt++] = DJ_SIG_TMS | (((in >> (len-1)) & 1) ? DJ_SIG_TDI : 0);
+  cmd[cmd_cnt++] = 1; /* Exit1-xR */
+
   cmd[cmd_cnt++] = DJ_CMD_CLK;
   cmd[cmd_cnt++] = DJ_SIG_TMS;
   cmd[cmd_cnt++] = 1; /* Update-xR */
@@ -187,9 +201,22 @@ static uint32_t dj_shift(libusb_device_handle *dev, uint32_t in, int len)
   cmd[cmd_cnt++] = 0;
   cmd[cmd_cnt++] = 1; /* Run-Test/Idle */
 
-  (void) dj_usb_send(dev, cmd, cmd_cnt);
+  cmd[cmd_cnt++] = DJ_CMD_STOP;
 
-  out >>= 32 - len;
+  (void) dj_usb_send(dev, cmd, cmd_cnt);
+  ret = dj_usb_recv(dev, rcv, byte_cnt+1);
+
+  if (ret != SR_OK) {
+    sr_err("USB receive error: %s.", libusb_error_name(ret));
+    return 0;
+  }
+
+  out = 0;
+  for (int i=0; i<byte_cnt; i++) {
+    out |= swap_bits8(rcv[i]) << (8 * i);
+  }
+  out |= rcv[byte_cnt] ? (1u << (len-1)) : 0;
+
   return out;
 }
 
@@ -206,6 +233,8 @@ static int gmm7550_ila_set_ir(libusb_device_handle *dev, uint8_t instr)
   cmd[cmd_cnt++] = DJ_CMD_CLK;
   cmd[cmd_cnt++] = 0;
   cmd[cmd_cnt++] = 2; /* Shift-IR */
+
+  cmd[cmd_cnt++] = DJ_CMD_STOP;
 
   (void) dj_usb_send(dev, cmd, cmd_cnt);
   (void) dj_shift(dev, instr, ILA_IR_LENGTH); /* Run-Test/Idle */
@@ -226,6 +255,8 @@ static uint32_t gmm7550_ila_get_set_dr(libusb_device_handle *dev, uint32_t data,
   cmd[cmd_cnt++] = DJ_CMD_CLK;
   cmd[cmd_cnt++] = 0;
   cmd[cmd_cnt++] = 2; /* Shift-DR */
+
+  cmd[cmd_cnt++] = DJ_CMD_STOP;
 
   (void) dj_usb_send(dev, cmd, cmd_cnt);
   return dj_shift(dev, data, len); /* Run-Test/Idle */
