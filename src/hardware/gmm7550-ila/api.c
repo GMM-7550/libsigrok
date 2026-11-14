@@ -35,7 +35,8 @@ static const uint32_t drvopts[] = {
 static const uint32_t devopts[] = {
   SR_CONF_CONN | SR_CONF_GET,
   SR_CONF_NUM_LOGIC_CHANNELS | SR_CONF_GET,
-  // SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_LIST,
+  SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
+  SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_LIST,
   SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
   SR_CONF_CAPTURE_RATIO | SR_CONF_GET | SR_CONF_SET,
 };
@@ -222,6 +223,12 @@ static int config_get(uint32_t key, GVariant **data,
       return SR_ERR;
     *data = g_variant_new_uint32(g_slist_length(sdi->channels));
     break;
+  case SR_CONF_LIMIT_SAMPLES:
+    if (!sdi)
+      return SR_ERR;
+    devc = sdi->priv;
+    *data = g_variant_new_uint64(devc->limit_samples);
+    break;
   case SR_CONF_SAMPLERATE:
     *data = g_variant_new_uint64(SAMPLE_RATE);
     break;
@@ -249,6 +256,13 @@ static int config_set(uint32_t key, GVariant *data,
   switch (key) {
   case SR_CONF_CAPTURE_RATIO:
     devc->capture_ratio = g_variant_get_uint64(data);
+    break;
+  case SR_CONF_LIMIT_SAMPLES:
+    /* Sample memory depth is fixed in the FPGA design */
+    if (g_variant_get_uint64(data) != LIMIT_SAMPLES) {
+      sr_err("Only %d samples are supported.", LIMIT_SAMPLES);
+      return SR_ERR_ARG;
+    }
     break;
   default:
     return SR_ERR_NA;
