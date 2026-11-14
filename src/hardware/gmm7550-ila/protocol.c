@@ -223,6 +223,8 @@ static uint32_t dj_shift(libusb_device_handle *dev, int select, uint32_t in, int
     out |= (uint32_t)swap_bits8(rcv[i]) << (8 * i);
   }
   out |= rcv[byte_cnt] ? (1u << (len-1)) : 0;
+  if (len < 32)
+    out &= (1u << len) - 1;
 
   return out;
 }
