@@ -335,6 +335,15 @@ SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
+static void print_data_at_addr(const struct sr_dev_inst *sdi, uint16_t addr)
+{
+  uint32_t data;
+
+  gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, addr);
+  data = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
+  sr_dbg("[%04x] = %08x", addr, data);
+}
+
 SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 {
   (void)fd;
@@ -376,6 +385,10 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 
     t_addr = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TADDR, ILA_ADDR_LENGTH, 0);
     sr_dbg("trigger addr = 0x%x", t_addr);
+
+    print_data_at_addr(sdi, t_addr-1);
+    print_data_at_addr(sdi, t_addr);
+    print_data_at_addr(sdi, t_addr+1);
 
     post_cnt = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, 0);
     sr_dbg("post counter = %d", post_cnt);
