@@ -394,11 +394,10 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     sr_dbg("post counter = %d", post_cnt);
 
     pre_cnt = LIMIT_SAMPLES - post_cnt;
-
-    start_addr = t_addr - pre_cnt;
     sr_dbg("pre counter = %d", pre_cnt);
-    if (start_addr < 0)
-      start_addr += LIMIT_SAMPLES;
+
+    start_addr = (LIMIT_SAMPLES + t_addr - pre_cnt) & (LIMIT_SAMPLES - 1);
+    sr_dbg("start addr = 0x%x", start_addr);
 
     /* Send pre-trigger data
      */
@@ -411,8 +410,8 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 
     packet.type = SR_DF_LOGIC;
     packet.payload = &logic;
-    logic.length = pre_cnt;
     logic.unitsize = 4;
+    logic.length = pre_cnt * logic.unitsize;
     logic.data = devc->raw_sample_buf;
     sr_session_send(cb_data, &packet);
 
@@ -423,18 +422,21 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 
     /* Sent post-trigger data
      */
-    gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
-    b = (uint32_t *)devc->raw_sample_buf;
-    for (i = post_cnt; i > 0; i--) {
-      *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
-    }
+    if (post_cnt > 0) {
+      sr_dbg("t_addr = 0x%x", t_addr);
+      gmm7550_ila_rw_reg(sdi, ILA_INSTR_ADDR, ILA_ADDR_LENGTH, t_addr);
+      b = (uint32_t *)devc->raw_sample_buf;
+      for (i = post_cnt; i > 0; i--) {
+        *b++ = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
+      }
 
-    packet.type = SR_DF_LOGIC;
-    packet.payload = &logic;
-    logic.length = post_cnt;
-    logic.unitsize = 4;
-    logic.data = devc->raw_sample_buf;
-    sr_session_send(cb_data, &packet);
+      packet.type = SR_DF_LOGIC;
+      packet.payload = &logic;
+      logic.unitsize = 4;
+      logic.length = post_cnt * logic.unitsize;
+      logic.data = devc->raw_sample_buf;
+      sr_session_send(cb_data, &packet);
+    }
 
     g_free(devc->raw_sample_buf);
     devc->raw_sample_buf = NULL;
