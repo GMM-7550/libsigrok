@@ -335,6 +335,7 @@ SR_PRIV int gmm7550_ila_acquisition_stop(const struct sr_dev_inst *sdi)
 	return SR_OK;
 }
 
+/* DEBUG
 static void print_data_at_addr(const struct sr_dev_inst *sdi, uint16_t addr)
 {
   uint32_t data;
@@ -343,6 +344,7 @@ static void print_data_at_addr(const struct sr_dev_inst *sdi, uint16_t addr)
   data = gmm7550_ila_rw_reg(sdi, ILA_INSTR_DATA, ILA_DATA_LENGTH, 0);
   sr_dbg("[%04x] = %08x", addr, data);
 }
+*/
 
 SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
 {
@@ -355,7 +357,7 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
   uint32_t *b;
   uint8_t la_status;
   uint16_t t_addr;
-  int16_t start_addr;
+  uint16_t start_addr;
   uint16_t post_cnt, pre_cnt;
 
   if (!(sdi = cb_data))
@@ -386,11 +388,14 @@ SR_PRIV int gmm7550_ila_receive_data(int fd, int revents, void *cb_data)
     t_addr = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TADDR, ILA_ADDR_LENGTH, 0);
     sr_dbg("trigger addr = 0x%x", t_addr);
 
+    /* DEBUG
     print_data_at_addr(sdi, t_addr-1);
     print_data_at_addr(sdi, t_addr);
     print_data_at_addr(sdi, t_addr+1);
+    */
 
     post_cnt = gmm7550_ila_rw_reg(sdi, ILA_INSTR_TPOST, ILA_ADDR_LENGTH, 0);
+    post_cnt++; /* correction for 1-sample-off trigger position */
     sr_dbg("post counter = %d", post_cnt);
 
     pre_cnt = LIMIT_SAMPLES - post_cnt;
